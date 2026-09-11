@@ -15,11 +15,11 @@
   // === Провайдеры моделей ===========================================
   models: {
     providers: {
-      // DeepInfra как кастомный OpenAI-совместимый провайдер.
-      // НЕ существует "@openclaw/deepinfra-provider" — подключаем напрямую.
-      deepinfra: {
-        baseUrl: "${DEEPINFRA_BASE_URL}", // https://api.deepinfra.com/v1/openai
-        apiKey: "${DEEPINFRA_API_KEY}",
+      // LLM как кастомный OpenAI-совместимый провайдер.
+      // НЕ существует "@openclaw/llm-provider" — подключаем напрямую.
+      llm: {
+        baseUrl: "${LLM_BASE_URL}", // https://api.openai.com/v1
+        apiKey: "${LLM_API_KEY}",
         api: "openai-completions",
         // IDLE-таймаут (с момента последнего токена). DeepSeek-V4-Pro через прокси даёт длинные
         // немые паузы на сложных ответах (буферизация SSE) — на 120 ловили "LLM idle timeout".
@@ -27,12 +27,12 @@
         timeoutSeconds: 300,
         models: [
           {
-            // Берётся из DEEPINFRA_MODEL в .env → deploy-config.sh подставляет при деплое.
-            id: "${DEEPINFRA_MODEL}",
-            name: "${DEEPINFRA_MODEL}",
+            // Берётся из LLM_MODEL в .env → deploy-config.sh подставляет при деплое.
+            id: "${LLM_MODEL}",
+            name: "${LLM_MODEL}",
             reasoning: false,
             input: ["text"],
-            // Стоимость зависит от модели — при смене DEEPINFRA_MODEL обновить вручную
+            // Стоимость зависит от модели — при смене LLM_MODEL обновить вручную
             // (или оставить нули, если учёт расходов в OpenClaw не нужен). ADR-0003.
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             contextWindow: 131072,
@@ -74,17 +74,17 @@
   agents: {
     defaults: {
       // Дефолтная модель-фолбэк (каждый агент в list задаёт свою явно).
-      model: { primary: "deepinfra/${DEEPINFRA_MODEL}" },
+      model: { primary: "llm/${LLM_MODEL}" },
       // Allowlist моделей, доступных агентам.
       models: {
-        "deepinfra/${DEEPINFRA_MODEL}": { alias: "${DEEPINFRA_MODEL}" },
+        "llm/${LLM_MODEL}": { alias: "${LLM_MODEL}" },
       },
       // ── ПАМЯТЬ (recall на эмбеддингах) ────────────────────────────────────────────
-      // Тулзы: memory_search + memory_get. Провайдер deepinfra, модель BAAI/bge-m3
-      // (мультиязычная, 1024-dim, тянет русский). Эмбеддинги идут НА api.deepinfra.com
-      // → через прокси (как LLM-вызовы). Ключ — DEEPINFRA_API_KEY (уже есть).
+      // Тулзы: memory_search + memory_get. Провайдер llm, модель BAAI/bge-m3
+      // (мультиязычная, 1024-dim, тянет русский). Эмбеддинги идут НА api.openai.com
+      // → через прокси (как LLM-вызовы). Ключ — LLM_API_KEY (уже есть).
       // Отключить: поменять enabled: false. Подробности — docs/tasks/memory-enablement.md.
-      memorySearch: { enabled: true, provider: "deepinfra", model: "BAAI/bge-m3" },
+      memorySearch: { enabled: true, provider: "llm", model: "BAAI/bge-m3" },
     },
     // ОДИН агент (agent-as-MCP): native-субагенты не получают bundle-mcp (ограничение OpenClaw,
     // подтверждено тректорией), поэтому «специалисты» = умные MCP-тулзы со своей моделью внутри
@@ -93,9 +93,9 @@
       {
         id: "orchestrator",
         default: true,
-        model: { primary: "deepinfra/${DEEPINFRA_MODEL}" },
-        // Низкая температура — детерминированный ассистент (params уходят провайдеру DeepInfra).
-        models: { "deepinfra/${DEEPINFRA_MODEL}": { params: { temperature: 0.3 } } },
+        model: { primary: "llm/${LLM_MODEL}" },
+        // Низкая температура — детерминированный ассистент (params уходят провайдеру LLM).
+        models: { "llm/${LLM_MODEL}": { params: { temperature: 0.3 } } },
         workspace: "${OPENCLAW_HOME}/ws/orchestrator",
         // Имеет bundle-mcp (из профиля messaging): redmine (+ team_digest), gitlab, reviewer.
         // Тяжёлая интерпретация и сырьё живут ВНУТРИ умных тулзов (своя модель) → контекст не пухнет.
@@ -133,7 +133,7 @@
       // Формат: telegram:<id>,telegram:<id> → deploy-скрипт развернёт в массив.
       allowFrom: "${TELEGRAM_ALLOWED_FROM}",
       // Прокси ТОЛЬКО для вызовов Telegram Bot API (api.telegram.org гео-блок).
-      // Весь остальной трафик (DeepInfra, web) идёт напрямую = быстрее.
+      // Весь остальной трафик (LLM, web) идёт напрямую = быстрее.
       // http://... или socks5://... ; gateway запускать БЕЗ HTTP(S)_PROXY в env.
       proxy: "${TELEGRAM_PROXY}",
       // Стриминг-превью ответа. ДЕФОЛТ "partial" правит сообщение editMessageText ~раз/сек —
@@ -167,13 +167,13 @@
           // Дефолтный проект и реестр команды (для get_team / analyze_team_load).
           REDMINE_PROJECT: "${REDMINE_PROJECT}",
           REDMINE_TEAM_CONFIG: "${AGENT_REPO_ROOT}/config/team.json",
-          // team_digest — агентный аналитик (своя модель + DeepInfra через прокси, как reviewer).
-          // Redmine ходит НАПРЯМУЮ, DeepInfra — через прокси.
-          DEEPINFRA_BASE_URL:    "${DEEPINFRA_BASE_URL}",
-          DEEPINFRA_API_KEY:     "${DEEPINFRA_API_KEY}",
-          DEEPINFRA_MODEL:       "${DEEPINFRA_MODEL}",        // фолбэк модели аналитика
-          REDMINE_ANALYST_MODEL: "${REDMINE_ANALYST_MODEL}", // override (свопаешь на gemma в .env); не задан → DEEPINFRA_MODEL
-          DEEPINFRA_PROXY:       "${TELEGRAM_PROXY}",
+          // team_digest — агентный аналитик (своя модель + LLM через прокси, как reviewer).
+          // Redmine ходит НАПРЯМУЮ, LLM — через прокси.
+          LLM_BASE_URL:    "${LLM_BASE_URL}",
+          LLM_API_KEY:     "${LLM_API_KEY}",
+          LLM_MODEL:       "${LLM_MODEL}",        // фолбэк модели аналитика
+          REDMINE_ANALYST_MODEL: "${REDMINE_ANALYST_MODEL}", // override (свопаешь на gemma в .env); не задан → LLM_MODEL
+          LLM_PROXY:       "${TELEGRAM_PROXY}",
           ANALYST_PROMPT_PATH:   "${AGENT_REPO_ROOT}/prompts/redmine-analyst.md",
           // Общая фактура (проект/статусы/команда) — единый источник правды с оркестратором.
           // MCP склеит base + ролевой (см. редмайн index.ts), как deploy-config.sh для оркестратора.
@@ -185,7 +185,7 @@
           AGENT_REPO_ROOT:       "${AGENT_REPO_ROOT}",
           PROJECTS_REGISTRY:     "${AGENT_REPO_ROOT}/config/projects.json5",
           COMPILER_PROMPT_PATH:  "${AGENT_REPO_ROOT}/prompts/task-compiler.md",
-          COMPILER_MODEL:        "${COMPILER_MODEL}",        // сильная модель (опус-класс из DeepInfra); пусто → REDMINE_ANALYST_MODEL/DEEPINFRA_MODEL
+          COMPILER_MODEL:        "${COMPILER_MODEL}",        // сильная модель (опус-класс из LLM); пусто → REDMINE_ANALYST_MODEL/LLM_MODEL
           COMPILER_TEMPERATURE:  "${COMPILER_TEMPERATURE}",  // не задано → дефолт 0.3 (в коде MCP)
           // ── RAG (ADR-0027 этап 5): внутренний RagFlow ──────────────────────────────────
           RAGFLOW_BASE_URL:      "${RAGFLOW_BASE_URL}",
@@ -237,7 +237,7 @@
           AGENT_REPO_ROOT:     "${AGENT_REPO_ROOT}",       // для аудит-лога docs/approval-history.md
           // FAIL-SAFE: запись ТОЛЬКО при DRY_RUN=false (из .env). Пусто/true/${...} → сухой прогон.
           DRY_RUN:             "${DRY_RUN}",
-          REDMINE_WRITE_MODEL: "${DEEPINFRA_MODEL}",        // метка модели в подписи (NB-3)
+          REDMINE_WRITE_MODEL: "${LLM_MODEL}",        // метка модели в подписи (NB-3)
           REDMINE_WRITE_ON_BEHALF: "${REDMINE_WRITE_ON_BEHALF}",  // по чьему поручению (пусто → «тимлида»)
         },
       },
@@ -259,7 +259,7 @@
           REDMINE_PASSWORD:    "${REDMINE_PASSWORD}",
           AGENT_REPO_ROOT:     "${AGENT_REPO_ROOT}",        // аудит-лог docs/approval-history.md
           DRY_RUN:             "${DRY_RUN}",                // FAIL-SAFE: реальная запись только при DRY_RUN=false
-          GITLAB_WRITE_MODEL:  "${DEEPINFRA_MODEL}",        // метка модели в подписи действия
+          GITLAB_WRITE_MODEL:  "${LLM_MODEL}",        // метка модели в подписи действия
           GITLAB_WRITE_ON_BEHALF: "${REDMINE_WRITE_ON_BEHALF}",  // по чьему поручению (переиспользуем переменную)
         },
       },
@@ -277,11 +277,11 @@
           REDMINE_LOGIN:      "${REDMINE_LOGIN}",
           REDMINE_PASSWORD:   "${REDMINE_PASSWORD}",
           REDMINE_PROJECT:    "${REDMINE_PROJECT}",
-          DEEPINFRA_BASE_URL: "${DEEPINFRA_BASE_URL}",
-          DEEPINFRA_API_KEY:  "${DEEPINFRA_API_KEY}",
+          LLM_BASE_URL: "${LLM_BASE_URL}",
+          LLM_API_KEY:  "${LLM_API_KEY}",
           REVIEW_MODEL:       "${REVIEW_MODEL}",
-          DEEPINFRA_MODEL:    "${DEEPINFRA_MODEL}",
-          DEEPINFRA_PROXY:    "${TELEGRAM_PROXY}",
+          LLM_MODEL:    "${LLM_MODEL}",
+          LLM_PROXY:    "${TELEGRAM_PROXY}",
           REVIEW_PROMPT_PATH: "${AGENT_REPO_ROOT}/prompts/code-review.md",
           REVIEW_PROJECTS:    "<main-project>:7,<variant-a>:423,<variant-b>:266,<variant-c>:523,<dev-staging>:581",
         },

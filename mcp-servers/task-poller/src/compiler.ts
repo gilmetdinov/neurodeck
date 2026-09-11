@@ -1,5 +1,5 @@
 // mcp-servers/task-poller/src/compiler.ts
-// compile_task + task_estimate — напрямую через DeepInfra, без оркестратора (ADR-0028).
+// compile_task + task_estimate — напрямую через LLM, без оркестратора (ADR-0028).
 // Использует промпт из prompts/task-compiler.md и эвристику/LLM из task_estimate.
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from "node:fs";
@@ -26,9 +26,9 @@ const REDMINE_LOGIN    = clean(process.env.REDMINE_LOGIN);
 const REDMINE_PASSWORD = clean(process.env.REDMINE_PASSWORD);
 const useBasicAuth     = Boolean(REDMINE_LOGIN && REDMINE_PASSWORD);
 
-const DI_BASE          = clean(process.env.DEEPINFRA_BASE_URL);
-const DI_KEY           = clean(process.env.DEEPINFRA_API_KEY);
-const COMPILER_MODEL   = clean(process.env.COMPILER_MODEL) || clean(process.env.REDMINE_ANALYST_MODEL) || clean(process.env.DEEPINFRA_MODEL) || "deepseek-ai/DeepSeek-V4-Pro";
+const LLM_BASE          = clean(process.env.LLM_BASE_URL);
+const LLM_KEY           = clean(process.env.LLM_API_KEY);
+const COMPILER_MODEL   = clean(process.env.COMPILER_MODEL) || clean(process.env.REDMINE_ANALYST_MODEL) || clean(process.env.LLM_MODEL) || "deepseek-ai/DeepSeek-V4-Pro";
 const COMPILER_TEMP    = Number(clean(process.env.COMPILER_TEMPERATURE) || "0.3");
 const COMPILER_PROMPT_PATH = clean(process.env.COMPILER_PROMPT_PATH) || join(ROOT, "prompts", "task-compiler.md");
 
@@ -36,7 +36,7 @@ const QUEUE_DIR      = clean(process.env.TASK_QUEUE_DIR) || join(ROOT, "workspac
 const REGISTRY_PATH  = clean(process.env.PROJECTS_REGISTRY) || join(ROOT, "config", "projects.json5");
 const DAG_PATH       = clean(process.env.HARNESS_DAG_PATH) || join(ROOT, "harness", "docs", "h1-module-dag.md");
 
-const PROXY_URL = clean(process.env.PROXY_URL) || clean(process.env.DEEPINFRA_PROXY) || clean(process.env.HTTPS_PROXY);
+const PROXY_URL = clean(process.env.PROXY_URL) || clean(process.env.LLM_PROXY) || clean(process.env.HTTPS_PROXY);
 const diDispatcher = PROXY_URL ? new ProxyAgent(PROXY_URL) : undefined;
 
 let COMPILER_PROMPT: string;
@@ -79,14 +79,14 @@ async function redmineIssueDetail(id: number): Promise<any> {
 }
 
 async function diChat(messages: unknown[], maxTokens = 4000, temperature = COMPILER_TEMP): Promise<string> {
-  if (!DI_BASE || !DI_KEY) throw new Error("DEEPINFRA_BASE_URL / DEEPINFRA_API_KEY not set");
-  const res = await diFetch(`${DI_BASE}/chat/completions`, {
+  if (!LLM_BASE || !LLM_KEY) throw new Error("LLM_BASE_URL / LLM_API_KEY not set");
+  const res = await diFetch(`${LLM_BASE}/chat/completions`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${DI_KEY}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${LLM_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: COMPILER_MODEL, messages, temperature, max_tokens: maxTokens }),
     dispatcher: diDispatcher,
   });
-  if (!res.ok) throw new Error(`DeepInfra ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = (await res.json()) as any;
   return (data?.choices?.[0]?.message?.content as string) || "";
 }
@@ -253,18 +253,18 @@ export function estimateHeuristic(taskSpec: Record<string, any>, mode = "manual"
 }
 
 async function estimateLLM(taskSpec: Record<string, any>, mode = "manual"): Promise<Record<string, any>> {
-  if (!DI_BASE || !DI_KEY) return estimateHeuristic(taskSpec, mode);
+  if (!LLM_BASE || !LLM_KEY) return estimateHeuristic(taskSpec, mode);
   try {
     const messages = [
       { role: "system", content: "Ты — оценщик задач для AI-агента. Оцени сложность TaskSpec и предложи модель/бюджет/попытки. Режим: " + mode + ". Ответь СТРОГО JSON: { model, maxBudgetUsd, maxAttempts, tier, score, rationale, estimated_time_min }." },
       { role: "user", content: JSON.stringify({ mode, prompt_md: (taskSpec.prompt_md as string)?.slice(0, 3000), lang: taskSpec.lang, scope_paths: taskSpec.scope_paths, suggested_model: taskSpec.suggested_model }).slice(0, 4000) },
     ];
-    const res = await diFetch(`${DI_BASE}/chat/completions`, {
-      method: "POST", headers: { Authorization: `Bearer ${DI_KEY}`, "Content-Type": "application/json" },
+    const res = await diFetch(`${LLM_BASE}/chat/completions`, {
+      method: "POST", headers: { Authorization: `Bearer ${LLM_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model: COMPILER_MODEL, messages, temperature: 0.2, max_tokens: 400, response_format: { type: "json_object" } }),
       dispatcher: diDispatcher,
     });
-    if (!res.ok) throw new Error(`DeepInfra ${res.status}`);
+    if (!res.ok) throw new Error(`LLM ${res.status}`);
     const data = await res.json() as any;
     const content = data?.choices?.[0]?.message?.content;
     const j = typeof content === "string" ? (() => { try { return JSON.parse(content); } catch { return null; } })() : content;
@@ -304,8 +304,8 @@ export interface CompileResult {
 }
 
 export async function compileTask(redmineId: number, input?: { repo?: string; category?: string; model?: string; extra?: string; reworkContext?: string }): Promise<CompileResult> {
-  if (!DI_BASE || !DI_KEY || !COMPILER_MODEL) {
-    return { redmine_id: redmineId, task_id: "", error: "task-poller: DEEPINFRA_BASE_URL / DEEPINFRA_API_KEY / COMPILER_MODEL not set" };
+  if (!LLM_BASE || !LLM_KEY || !COMPILER_MODEL) {
+    return { redmine_id: redmineId, task_id: "", error: "task-poller: LLM_BASE_URL / LLM_API_KEY / COMPILER_MODEL not set" };
   }
 
   let issue: any;
@@ -340,7 +340,7 @@ export async function compileTask(redmineId: number, input?: { repo?: string; ca
 
   let content = "";
   try { content = await diChat(messages); }
-  catch (e) { return { redmine_id: redmineId, task_id: "", error: `DeepInfra compiler failed: ${String((e as Error)?.message ?? e).slice(0, 200)}` }; }
+  catch (e) { return { redmine_id: redmineId, task_id: "", error: `LLM compiler failed: ${String((e as Error)?.message ?? e).slice(0, 200)}` }; }
 
   const draft = extractJson(content);
   if (!draft) return { redmine_id: redmineId, task_id: "", error: "compiler did not return valid JSON", raw: content.slice(0, 800) };

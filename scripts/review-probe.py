@@ -3,12 +3,12 @@
 review-probe.py — сквозная проба ревью-флоу (этап 3) ДО оборачивания в MCP.
 
 Пайплайн: GitLab MR diff (через /changes — рабочий эндпоинт на GitLab 15.1.4, в отличие
-от /diffs, который 404) + контекст Redmine-задачи + прогон через DeepInfra → печать ревью.
+от /diffs, который 404) + контекст Redmine-задачи + прогон через LLM → печать ревью.
 
-ЗАЧЕМ ОТДЕЛЬНЫМ СКРИПТОМ: ассистент через прокси до <YOUR_GITLAB_HOST>/DeepInfra не достучится.
-Гоняешь ты, отдаёшь вывод. Только GET к GitLab/Redmine (read), один POST к DeepInfra.
+ЗАЧЕМ ОТДЕЛЬНЫМ СКРИПТОМ: ассистент через прокси до <YOUR_GITLAB_HOST>/LLM не достучится.
+Гоняешь ты, отдаёшь вывод. Только GET к GitLab/Redmine (read), один POST к LLM.
 
-СЕТЬ: GitLab/Redmine (<YOUR_HOST>, внутренние) — НАПРЯМУЮ. DeepInfra (api.deepinfra.com,
+СЕТЬ: GitLab/Redmine (<YOUR_HOST>, внутренние) — НАПРЯМУЮ. LLM (api.openai.com,
 внешний) — ЧЕРЕЗ ПРОКСИ (PROXY_URL/TELEGRAM_PROXY из .env), иначе на этой сети виснет.
 
 Запуск:
@@ -46,13 +46,13 @@ GL_TOKEN = os.environ.get("GITLAB_TOKEN", "")
 RM_BASE = os.environ.get("REDMINE_BASE_URL", "").rstrip("/")
 RM_LOGIN = os.environ.get("REDMINE_LOGIN", "")
 RM_PASS = os.environ.get("REDMINE_PASSWORD", "")
-DI_BASE = os.environ.get("DEEPINFRA_BASE_URL", "https://api.deepinfra.com/v1/openai").rstrip("/")
-DI_KEY = os.environ.get("DEEPINFRA_API_KEY", "")
-MODEL = os.environ.get("REVIEW_MODEL") or os.environ.get("DEEPINFRA_MODEL", "")
+LLM_BASE = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+LLM_KEY = os.environ.get("LLM_API_KEY", "")
+MODEL = os.environ.get("REVIEW_MODEL") or os.environ.get("LLM_MODEL", "")
 PROXY = os.environ.get("PROXY_URL") or os.environ.get("TELEGRAM_PROXY", "")
 
 for name, val in [("GITLAB_BASE_URL", GL_BASE), ("GITLAB_TOKEN", GL_TOKEN),
-                  ("DEEPINFRA_API_KEY", DI_KEY), ("DEEPINFRA_MODEL/REVIEW_MODEL", MODEL)]:
+                  ("LLM_API_KEY", LLM_KEY), ("LLM_MODEL/REVIEW_MODEL", MODEL)]:
     if not val:
         sys.exit(f"✗ нет {name} в .env")
 
@@ -61,7 +61,7 @@ REVIEW_EXT = {"php", "go", "ts", "tsx", "js", "jsx", "vue"}
 SKIP_SUBSTR = ("/migrations/", ".min.", "package-lock.json", "composer.lock", "yarn.lock", ".lock")
 MAX_DIFF_CHARS = 120_000   # ~30K токенов; выше — режем и помечаем
 
-# ── HTTP: direct (внутренние) и proxy (DeepInfra) ────────────────────────────────
+# ── HTTP: direct (внутренние) и proxy (LLM) ────────────────────────────────
 
 _direct = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 _proxied = (urllib.request.build_opener(urllib.request.ProxyHandler({"https": PROXY, "http": PROXY}))
@@ -94,7 +94,7 @@ def rm_get(path: str, params: dict = None):
     except URLError as e:
         return None, f"network: {e.reason}"
 
-def deepinfra_review(system_prompt: str, user_msg: str) -> str:
+def llm_review(system_prompt: str, user_msg: str) -> str:
     body = json.dumps({
         "model": MODEL,
         "messages": [{"role": "system", "content": system_prompt},
@@ -102,17 +102,17 @@ def deepinfra_review(system_prompt: str, user_msg: str) -> str:
         "max_tokens": 2000,
         "temperature": 0.2,
     }).encode()
-    req = urllib.request.Request(f"{DI_BASE}/chat/completions", data=body,
-                                 headers={"Authorization": f"Bearer {DI_KEY}",
+    req = urllib.request.Request(f"{LLM_BASE}/chat/completions", data=body,
+                                 headers={"Authorization": f"Bearer {LLM_KEY}",
                                           "Content-Type": "application/json"})
     try:
         with _proxied.open(req, timeout=180) as r:
             data = json.loads(r.read().decode())
             return data["choices"][0]["message"]["content"]
     except HTTPError as e:
-        return f"[DeepInfra HTTP {e.code}] {e.read().decode()[:400]}"
+        return f"[LLM HTTP {e.code}] {e.read().decode()[:400]}"
     except URLError as e:
-        return f"[DeepInfra network] {e.reason}  (прокси? PROXY_URL={PROXY or '<нет>'})"
+        return f"[LLM network] {e.reason}  (прокси? PROXY_URL={PROXY or '<нет>'})"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────────
 
@@ -156,7 +156,7 @@ def main():
     proj, _, iid = args[0].partition("!")
 
     print(f"GitLab: {GL_BASE}   Redmine: {RM_BASE}")
-    print(f"Модель ревью: {MODEL}   Прокси для DeepInfra: {PROXY or '<нет — может зависнуть>'}")
+    print(f"Модель ревью: {MODEL}   Прокси для LLM: {PROXY or '<нет — может зависнуть>'}")
 
     # 1) MR details
     pcode, pdata = gl_get(f"/projects/{urllib.parse.quote(proj, safe='')}")
@@ -227,8 +227,8 @@ def main():
                 + ("  ⚠ ОБРЕЗАН по лимиту — отзыв по видимой части\n" if truncated else "\n")
                 + f"```diff\n{diff_text}\n```")
 
-    header("РЕВЬЮ (DeepInfra)")
-    print(deepinfra_review(system_prompt, user_msg))
+    header("РЕВЬЮ (LLM)")
+    print(llm_review(system_prompt, user_msg))
     print()
 
 if __name__ == "__main__":

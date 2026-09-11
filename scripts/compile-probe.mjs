@@ -1,7 +1,7 @@
 // compile-probe.mjs — проба compile_task (ADR-0015) на РЕАЛЬНОМ redmine MCP, мимо gateway/Telegram.
 // Спавнит mcp-servers/redmine/dist/index.js по stdio (как OpenClaw), берёт настоящую открытую
 // Redmine-задачу и компилирует её в черновик TaskSpec. Проверяет весь живой путь: Redmine (напрямую) +
-// DeepInfra (через прокси) + парс JSON + запись файлов. Деньги: один вызов компилятора (~центы).
+// LLM (через прокси) + парс JSON + запись файлов. Деньги: один вызов компилятора (~центы).
 //
 // Запуск:  node scripts/compile-probe.mjs [<redmine_id>] [<compiler_model>]
 //   без аргументов — возьмёт первую открытую задачу проекта и модель DeepSeek-V4-Pro.
@@ -40,7 +40,7 @@ const childEnv = {
   COMPILER_PROMPT_PATH: join(ROOT, "prompts", "task-compiler.md"),
   BASE_PROMPT_PATH: join(ROOT, "prompts", "_base.md"),
   ANALYST_PROMPT_PATH: join(ROOT, "prompts", "redmine-analyst.md"),
-  DEEPINFRA_PROXY: proxy,
+  LLM_PROXY: proxy,
   COMPILER_MODEL: compilerModel,
 };
 

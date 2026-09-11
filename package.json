@@ -2,7 +2,7 @@
   "name": "neurodeck-agent",
   "version": "0.1.0",
   "private": true,
-  "description": "AI-агент управления операционкой разработки neurodeck на базе OpenClaw + DeepInfra",
+  "description": "AI-агент управления операционкой разработки neurodeck на базе OpenClaw + LLM",
   "type": "module",
   "engines": {
     "node": ">=22.19"

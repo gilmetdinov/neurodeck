@@ -58,7 +58,7 @@ if [ ! -f ".env" ]; then
   info "Создаю .env из .env.example..."
   cp .env.example .env
   warn "Отредактируй .env и заполни обязательные переменные:"
-  echo "     DEEPINFRA_API_KEY       — ключ DeepInfra (https://deepinfra.com/dash/api_keys)"
+  echo "     LLM_API_KEY       — ключ LLM (https://platform.openai.com/api-keys)"
   echo "     TELEGRAM_BOT_TOKEN      — токен бота (@BotFather)"
   echo "     TELEGRAM_ALLOWED_USER_IDS — telegram:<твой_id> (узнать у @userinfobot)"
   echo ""
@@ -70,7 +70,7 @@ fi
 set -a; source .env; set +a
 
 MISSING=""
-[ -z "${DEEPINFRA_API_KEY:-}" ]   && MISSING="$MISSING DEEPINFRA_API_KEY"
+[ -z "${LLM_API_KEY:-}" ]   && MISSING="$MISSING LLM_API_KEY"
 [ -z "${TELEGRAM_BOT_TOKEN:-}" ]  && MISSING="$MISSING TELEGRAM_BOT_TOKEN"
 
 if [ -n "$MISSING" ]; then

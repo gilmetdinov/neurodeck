@@ -26,14 +26,14 @@ set -a && source .env && set +a
 export DRY_RUN=true
 
 # Check required env
-REDMINE_OK=true; GITLAB_OK=true; DEEPINFRA_OK=true
+REDMINE_OK=true; GITLAB_OK=true; LLM_OK=true
 [ -n "$REDMINE_BASE_URL" ] && [ -n "$REDMINE_LOGIN" ] && [ -n "$REDMINE_PASSWORD" ] || REDMINE_OK=false
 [ -n "$GITLAB_BASE_URL" ] && [ -n "$GITLAB_TOKEN" ] || GITLAB_OK=false
-[ -n "$DEEPINFRA_API_KEY" ] || DEEPINFRA_OK=false
+[ -n "$LLM_API_KEY" ] || LLM_OK=false
 
 $REDMINE_OK   && pass "Redmine env"     || skip "Redmine env"  "REDMINE_* not set"
 $GITLAB_OK    && pass "GitLab env"       || skip "GitLab env"   "GITLAB_* not set"
-$DEEPINFRA_OK && pass "DeepInfra env"    || skip "DeepInfra env" "DEEPINFRA_API_KEY not set"
+$LLM_OK && pass "LLM env"    || skip "LLM env" "LLM_API_KEY not set"
 
 # Check builds
 NEEDS_BUILD=false

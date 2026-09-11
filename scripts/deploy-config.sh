@@ -8,9 +8,9 @@
 #   3) бэкапит текущий ~/.openclaw/openclaw.json
 #   4) копирует шаблон на место рабочего конфига
 #
-# Секреты (${DEEPINFRA_API_KEY} и т.п.) НЕ инлайнятся — OpenClaw сам
+# Секреты (${LLM_API_KEY} и т.п.) НЕ инлайнятся — OpenClaw сам
 # подставит их из окружения демона. Поэтому демон надо запускать со
-# средой из .env (см. docs/guides/deepinfra-setup.md → "Запуск демона").
+# средой из .env (см. docs/guides/llm-setup.md → "Запуск демона").
 #
 # Usage:  npm run deploy:config   ||   bash scripts/deploy-config.sh
 # ─────────────────────────────────────────────────────────────────────────
@@ -53,14 +53,14 @@ if [ -f "$DEST" ]; then
   echo "↩  бэкап: $DEST.bak.*"
 fi
 
-# 4) рендер: AGENT_REPO_ROOT, TELEGRAM_ALLOWED_FROM и DEEPINFRA_MODEL через sed.
-#    Остальные секреты (${DEEPINFRA_API_KEY} и др.) — OpenClaw подставит из env демона.
-[ -n "${DEEPINFRA_MODEL:-}" ] || { echo "✗ DEEPINFRA_MODEL не задан в .env"; exit 1; }
+# 4) рендер: AGENT_REPO_ROOT, TELEGRAM_ALLOWED_FROM и LLM_MODEL через sed.
+#    Остальные секреты (${LLM_API_KEY} и др.) — OpenClaw подставит из env демона.
+[ -n "${LLM_MODEL:-}" ] || { echo "✗ LLM_MODEL не задан в .env"; exit 1; }
 sed \
   -e "s#\${AGENT_REPO_ROOT}#${AGENT_REPO_ROOT}#g" \
   -e "s#\${OPENCLAW_HOME}#${DEST_DIR}#g" \
   -e "s#\"\${TELEGRAM_ALLOWED_FROM}\"#${TELEGRAM_ALLOWED_FROM}#g" \
-  -e "s#\${DEEPINFRA_MODEL}#${DEEPINFRA_MODEL}#g" \
+  -e "s#\${LLM_MODEL}#${LLM_MODEL}#g" \
   "$SRC" > "$DEST"
 
 # 5) промпт ОДНОГО агента (agent-as-MCP) → ws/orchestrator/AGENTS.md.
@@ -77,6 +77,6 @@ cat "$AGENT_REPO_ROOT/prompts/_base.md" "$AGENT_REPO_ROOT/prompts/_fleet.md" "$A
 echo "✓ промпт orchestrator → $WS/AGENTS.md (_base.md + system.md, $(wc -l < "$WS/AGENTS.md") строк)"
 
 echo "✓ задеплоен конфиг → $DEST"
-echo "  Модель: ${DEEPINFRA_MODEL} (temp 0.3); gitlab-MCP без прокси"
-echo "  Секреты (\${DEEPINFRA_API_KEY}, \${TELEGRAM_BOT_TOKEN}, ...) OpenClaw подставит из env демона."
+echo "  Модель: ${LLM_MODEL} (temp 0.3); gitlab-MCP без прокси"
+echo "  Секреты (\${LLM_API_KEY}, \${TELEGRAM_BOT_TOKEN}, ...) OpenClaw подставит из env демона."
 echo "  Проверка: openclaw doctor"

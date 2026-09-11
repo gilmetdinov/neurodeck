@@ -21,7 +21,7 @@
   orchestrator: {
     id: "orchestrator",
     realization: "openclaw-agent",
-    modelEnv: "DEEPINFRA_MODEL",          // Kimi-K2.5, temp 0.3
+    modelEnv: "LLM_MODEL",          // Kimi-K2.5, temp 0.3
     role: "Дирижёр: интент → выбор специалиста → апрув-петли → агрегация отчётов. НЕ исполнитель.",
     prompt: "prompts/_base.md + prompts/system.md (склейка deploy → AGENTS.md)",
     status: "live",

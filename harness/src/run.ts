@@ -301,7 +301,7 @@ const claudeCodeDriver: AgentDriver = { name: "claude-code", async run(task, env
   // Стрипаем секреты из env: чтобы claude НЕ мог аутентиться к GitLab/Redmine/др. (его собственный
   // auth — подписка через keychain/OAuth, НЕ env, так что claude от этого не ломается).
   const childEnv: Record<string, string> = { ...process.env } as Record<string, string>;
-  for (const k of ["GITLAB_TOKEN", "REDMINE_API_KEY", "REDMINE_PASSWORD", "DEEPINFRA_API_KEY", "TELEGRAM_BOT_TOKEN", "GATEWAY_AUTH_TOKEN", "ANTHROPIC_API_KEY"]) delete childEnv[k];
+  for (const k of ["GITLAB_TOKEN", "REDMINE_API_KEY", "REDMINE_PASSWORD", "LLM_API_KEY", "TELEGRAM_BOT_TOKEN", "GATEWAY_AUTH_TOKEN", "ANTHROPIC_API_KEY"]) delete childEnv[k];
   // Прокси ТОЛЬКО для api.anthropic.com; <YOUR_HOST> НЕ в NO_PROXY → попытка в офисный gitlab уйдёт
   // через внешний прокси и не доедет (доп. барьер против вытягивания реп).
   if (PROXY) { childEnv.HTTPS_PROXY = PROXY; childEnv.HTTP_PROXY = PROXY; childEnv.NO_PROXY = "localhost,127.0.0.1"; }
@@ -331,7 +331,7 @@ const claudeCodeDriver: AgentDriver = { name: "claude-code", async run(task, env
 } };
 
 // OpencodeDriver — прогон через `opencode run` (Zen-модели, PAYG). Контракт задокументирован в
-// docs/tasks/model-provider-zen-vs-deepinfra.md. Преимущества над Claude Code: --session/--continue
+// docs/tasks/model-provider-zen-vs-llm.md. Преимущества над Claude Code: --session/--continue
 // (настоящий resume, не retry-preamble), структурный tool_output max_lines/max_bytes, модель-агностичный
 // (-m provider/model — один драйвер на все модели), проще auth (API-ключ, без OAuth/keychain танца).
 const opencodeDriver: AgentDriver = { name: "opencode", async run(task, env, attempt = 1): Promise<DriverResult> {
@@ -380,7 +380,7 @@ const opencodeDriver: AgentDriver = { name: "opencode", async run(task, env, att
   }
 
   const childEnv: Record<string, string> = { ...process.env } as Record<string, string>;
-  for (const k of ["GITLAB_TOKEN", "REDMINE_API_KEY", "REDMINE_PASSWORD", "DEEPINFRA_API_KEY",
+  for (const k of ["GITLAB_TOKEN", "REDMINE_API_KEY", "REDMINE_PASSWORD", "LLM_API_KEY",
     "TELEGRAM_BOT_TOKEN", "GATEWAY_AUTH_TOKEN"]) delete childEnv[k];
   if (PROXY) { childEnv.HTTPS_PROXY = PROXY; childEnv.HTTP_PROXY = PROXY; childEnv.NO_PROXY = "localhost,127.0.0.1"; }
 

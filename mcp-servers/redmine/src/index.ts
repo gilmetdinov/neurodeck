@@ -23,7 +23,7 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 
 import { join, resolve, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { fetch as diFetch, ProxyAgent } from "undici";  // для team_digest: DeepInfra через прокси
+import { fetch as diFetch, ProxyAgent } from "undici";  // для team_digest: LLM через прокси
 import JSON5 from "json5";                               // для compile_task: парс реестра projects.json5
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -734,10 +734,10 @@ updated_within_days=N (напр. 14) считает ТОЛЬКО задачи, �
 // Внутренний агент сам решает, по кому пройтись и куда углубиться, зовя redmine-функции
 // ниже как СВОИ tools (function-calling), и пишет интерпретированный дайджест. Сырьё живёт
 // здесь — наружу (в оркестратор) уходит только нарратив. Свой бюджет шагов (поводок).
-const DI_BASE       = clean(process.env.DEEPINFRA_BASE_URL);
-const DI_KEY        = clean(process.env.DEEPINFRA_API_KEY);
-const ANALYST_MODEL = clean(process.env.REDMINE_ANALYST_MODEL) || clean(process.env.DEEPINFRA_MODEL);
-const DI_PROXY      = clean(process.env.DEEPINFRA_PROXY) || clean(process.env.HTTPS_PROXY) || clean(process.env.HTTP_PROXY);
+const LLM_BASE       = clean(process.env.LLM_BASE_URL);
+const LLM_KEY        = clean(process.env.LLM_API_KEY);
+const ANALYST_MODEL = clean(process.env.REDMINE_ANALYST_MODEL) || clean(process.env.LLM_MODEL);
+const DI_PROXY      = clean(process.env.LLM_PROXY) || clean(process.env.HTTPS_PROXY) || clean(process.env.HTTP_PROXY);
 const ANALYST_MAX_STEPS = Math.max(2, Number(clean(process.env.ANALYST_MAX_STEPS) || "6"));
 const ANALYST_TEMP  = Number(clean(process.env.ANALYST_TEMPERATURE) || "0.6");
 const diDispatcher  = DI_PROXY ? new ProxyAgent(DI_PROXY) : undefined;
@@ -968,19 +968,19 @@ const ANALYST_FNS: Record<string, (a: any) => Promise<unknown> | unknown> = {
 };
 
 async function diChat(messages: unknown[], withTools: boolean): Promise<any> {
-  const res = await diFetch(`${DI_BASE}/chat/completions`, {
+  const res = await diFetch(`${LLM_BASE}/chat/completions`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${DI_KEY}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${LLM_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: ANALYST_MODEL, messages, temperature: ANALYST_TEMP, max_tokens: 2500, ...(withTools ? { tools: ANALYST_TOOLS, tool_choice: "auto" } : {}) }),
     dispatcher: diDispatcher,
   });
-  if (!res.ok) throw new Error(`DeepInfra ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = (await res.json()) as any;
   return data?.choices?.[0]?.message;
 }
 
 async function runAnalyst(query: string): Promise<string> {
-  if (!DI_BASE || !DI_KEY || !ANALYST_MODEL) return "team_digest недоступен: в env redmine-MCP нет DEEPINFRA_BASE_URL / DEEPINFRA_API_KEY / REDMINE_ANALYST_MODEL.";
+  if (!LLM_BASE || !LLM_KEY || !ANALYST_MODEL) return "team_digest недоступен: в env redmine-MCP нет LLM_BASE_URL / LLM_API_KEY / REDMINE_ANALYST_MODEL.";
   const messages: any[] = [{ role: "system", content: ANALYST_PROMPT }, { role: "user", content: query }];
   for (let step = 0; step < ANALYST_MAX_STEPS; step++) {
     const msg = await diChat(messages, step < ANALYST_MAX_STEPS - 1);  // последний шаг — без тулзов: заставляем дать финальный ответ
@@ -1012,7 +1012,7 @@ server.tool(
 
 // ═══ compile_task — компилятор Redmine-задачи → ЧЕРНОВИК TaskSpec (ADR-0015) ══════
 // agent-as-MCP (как team_digest): своя модель, изолирован. Переиспользует fnIssueDetail +
-// DeepInfra-инфру (DI_BASE/DI_KEY/diDispatcher/diFetch — объявлены в блоке team_digest выше).
+// LLM-инфру (LLM_BASE/LLM_KEY/diDispatcher/diFetch — объявлены в блоке team_digest выше).
 // Выход — черновик файлов TaskSpec в harness/tasks/ («?<id>.json» + «<id>.prompt.md»), которые
 // подхватывает harness-MCP preview_task/run_task. НЕ запускает прогон (это делает тимлид после
 // preview+апрува). Хранилище черновиков = harness/tasks/ с draft-префиксом «?» (легенда статусов);
@@ -1030,7 +1030,7 @@ const ROOT = (() => {
 const QUEUE_DIR      = clean(process.env.HARNESS_QUEUE_DIR) || join(ROOT, "harness", "queue");
 const REGISTRY_PATH  = clean(process.env.PROJECTS_REGISTRY) || join(ROOT, "config", "projects.json5");
 const DAG_PATH       = clean(process.env.HARNESS_DAG_PATH) || join(ROOT, "harness", "docs", "h1-module-dag.md");
-const COMPILER_MODEL = clean(process.env.COMPILER_MODEL) || ANALYST_MODEL;  // ANALYST_MODEL = REDMINE_ANALYST_MODEL||DEEPINFRA_MODEL
+const COMPILER_MODEL = clean(process.env.COMPILER_MODEL) || ANALYST_MODEL;  // ANALYST_MODEL = REDMINE_ANALYST_MODEL||LLM_MODEL
 const COMPILER_TEMP  = Number(clean(process.env.COMPILER_TEMPERATURE) || "0.3");
 
 let COMPILER_PROMPT = "Ты — компилятор Redmine-задачи в черновик TaskSpec для harness. Верни СТРОГО один JSON-объект по схеме из инструкции. Не выдумывай scope/файлы; задача неясна → needs_clarification.";
@@ -1162,13 +1162,13 @@ const kebab = (s: string): string =>
   s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "task";
 
 async function diChatCompiler(messages: unknown[]): Promise<string> {
-  const res = await diFetch(`${DI_BASE}/chat/completions`, {
+  const res = await diFetch(`${LLM_BASE}/chat/completions`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${DI_KEY}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${LLM_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: COMPILER_MODEL, messages, temperature: COMPILER_TEMP, max_tokens: 4000 }),
     dispatcher: diDispatcher,
   });
-  if (!res.ok) throw new Error(`DeepInfra ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = (await res.json()) as any;
   return (data?.choices?.[0]?.message?.content as string) || "";
 }
@@ -1237,7 +1237,7 @@ function saveTaskSpec(spec: Record<string, unknown>, writeTo: string, customPath
 }
 
 async function runCompiler(input: CompileInput): Promise<any> {
-  if (!DI_BASE || !DI_KEY || !COMPILER_MODEL) return { error: "compile_task недоступен: в env redmine-MCP нет DEEPINFRA_BASE_URL / DEEPINFRA_API_KEY / COMPILER_MODEL (фолбэк REDMINE_ANALYST_MODEL/DEEPINFRA_MODEL тоже пуст)." };
+  if (!LLM_BASE || !LLM_KEY || !COMPILER_MODEL) return { error: "compile_task недоступен: в env redmine-MCP нет LLM_BASE_URL / LLM_API_KEY / COMPILER_MODEL (фолбэк REDMINE_ANALYST_MODEL/LLM_MODEL тоже пуст)." };
 
   // Если передан готовый task_spec — пропускаем LLM-компиляцию, сразу пишем
   if (input.task_spec) {
@@ -1331,7 +1331,7 @@ async function runCompiler(input: CompileInput): Promise<any> {
 
   let content = "";
   try { content = await diChatCompiler(messages); }
-  catch (e) { return { error: `DeepInfra (компилятор): ${String((e as Error)?.message ?? e).slice(0, 200)}` }; }
+  catch (e) { return { error: `LLM (компилятор): ${String((e as Error)?.message ?? e).slice(0, 200)}` }; }
   const draft = extractJson(content);
   if (!draft) return { error: "компилятор не вернул валидный JSON", raw: content.slice(0, 800) };
 
@@ -1486,18 +1486,18 @@ function estimateHeuristic(taskSpec: Record<string, unknown>, mode: string): Rec
 }
 
 async function estimateLLM(taskSpec: Record<string, unknown>, mode: string): Promise<Record<string, unknown>> {
-  if (!DI_BASE || !DI_KEY) return estimateHeuristic(taskSpec, mode); // fallback to heuristic
+  if (!LLM_BASE || !LLM_KEY) return estimateHeuristic(taskSpec, mode); // fallback to heuristic
   try {
     const messages = [
       { role: "system", content: "Ты — оценщик задач для AI-агента. Оцени сложность TaskSpec и предложи модель/бюджет/попытки. Режим: " + mode + ". Ответь СТРОГО JSON: { model, maxBudgetUsd, maxAttempts, tier, score, rationale }." },
       { role: "user", content: JSON.stringify({ mode, prompt_md: (taskSpec.prompt_md as string)?.slice(0, 3000), lang: taskSpec.lang, scope_paths: taskSpec.scope_paths, suggested_model: taskSpec.suggested_model }).slice(0, 4000) },
     ];
     const body = JSON.stringify({ model: COMPILER_MODEL, messages, temperature: 0.2, max_tokens: 400, response_format: { type: "json_object" } });
-    const res = await diFetch(`${DI_BASE}/chat/completions`, {
-      method: "POST", headers: { Authorization: `Bearer ${DI_KEY}`, "Content-Type": "application/json" },
+    const res = await diFetch(`${LLM_BASE}/chat/completions`, {
+      method: "POST", headers: { Authorization: `Bearer ${LLM_KEY}`, "Content-Type": "application/json" },
       body, dispatcher: diDispatcher,
     });
-    if (!res.ok) throw new Error(`DeepInfra ${res.status}`);
+    if (!res.ok) throw new Error(`LLM ${res.status}`);
     const data = (await res.json()) as any;
     const content = data?.choices?.[0]?.message?.content;
     const j = typeof content === "string" ? (() => { try { return JSON.parse(content); } catch { return null; } })() : content;

@@ -1,7 +1,7 @@
 # AGENTS.md — neurodeck-agent
 
 AI-агент для управления операционной деятельностью разработки neurodeck.
-**Две среды:** (1) продуктовая — **OpenClaw + DeepInfra** (оркестратор Kimi-K2.5, аналитик/ревьюер
+**Две среды:** (1) продуктовая — **OpenClaw + LLM** (оркестратор Kimi-K2.5, аналитик/ревьюер
 DeepSeek-V4-Pro), интеграция с Redmine/GitLab/Obsidian; (2) разработческая — **opencode + Zen**
 (DeepSeek V4 Pro, Kimi K2.5/K2.7, MiniMax M2.5/M3, Qwen3.6, GLM 5.2) — этот файл читают агент-рантаймы (Claude Code / opencode / Codex)
 как проектный контекст.
@@ -9,7 +9,7 @@ DeepSeek-V4-Pro), интеграция с Redmine/GitLab/Obsidian; (2) разр�
 > **СТАТУС (2026-07-20):** мультиагент = Worker Pool (ADR-0028, v0.1.0) + release-manager v0.1.0
 > + git-egress v0.1.0 + redmine-аналитик v0.5.0 + Figma MCP v0.1.0 + code-review + redmine-write +
 > gitlab-write. Хранилище прозрачности: `workspace/state/`. Гардрейлы сжаты.
-> **Память включена** (deepinfra/bge-m3). **RAG-хук** готов (rag_query).
+> **Память включена** (llm/bge-m3). **RAG-хук** готов (rag_query).
 > ⚠ Оркестратор идёт через worker-bridge (вместо executor-engine). Worker Pool — файловая event-шина.
 
 > **Проектирование и решения — в [`docs/`](./docs/).** Читать с `docs/architecture.md`.
@@ -20,11 +20,11 @@ DeepSeek-V4-Pro), интеграция с Redmine/GitLab/Obsidian; (2) разр�
 ## Архитектура
 
 ```
-Telegram Bot → OpenClaw Gateway → DeepInfra API (Kimi-K2.5 / orchestration)
+Telegram Bot → OpenClaw Gateway → LLM API (Kimi-K2.5 / orchestration)
     ├── MCP: worker-bridge (оркестратор↔worker pool, pool_approve за гейтом)
     ├── MCP: redmine (read+аналитика v0.5.0 + compile_task)
     ├── MCP: gitlab (read — gitlab-mr-mcp)
-    ├── MCP: reviewer (review_mr: диф + контекст + DeepInfra)
+    ├── MCP: reviewer (review_mr: диф + контекст + LLM)
     ├── MCP: redmine-write (add_note/update_status/create_issue, за гейтом)
     ├── MCP: gitlab-write (merge_mr/set_reviewers/post_mr_comment, за гейтом)
     ├── MCP: git-egress (push #NNNNN → MR → Redmine статус 13)
@@ -66,7 +66,7 @@ neurodeck-agent/
 ├── mcp-servers/                 ← кастомные MCP (TypeScript, src/ → dist/)
 │   ├── redmine/                 ← read + аналитика + compile_task
 │   ├── redmine-write/           ← add_note/update_status/create_issue (за гейтом)
-│   ├── reviewer/                ← review_mr (DeepInfra, изолированно)
+│   ├── reviewer/                ← review_mr (LLM, изолированно)
 │   ├── gitlab-write/            ← merge_mr/set_reviewers/post_mr_comment (за гейтом)
 │   ├── git-egress/              ← push #NNNNN → MR → Redmine статус 13
 │   ├── release-manager/         ← rc-скан, ревью-назначение, версии, git-стат
@@ -104,10 +104,10 @@ neurodeck-agent/
 ## Переменные окружения (.env)
 
 ```env
-# DeepInfra — основной LLM провайдер
-DEEPINFRA_API_KEY=
-DEEPINFRA_BASE_URL=https://api.deepinfra.com/v1/openai
-DEEPINFRA_MODEL=moonshotai/Kimi-K2.5
+# LLM — основной провайдер
+LLM_API_KEY=
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=moonshotai/Kimi-K2.5
 
 # Telegram Bot
 TELEGRAM_BOT_TOKEN=
@@ -149,7 +149,7 @@ XWIKI_BASE_URL=
 
 | Этап | Статус |
 |------|--------|
-| 0 — Скелет (Telegram↔OpenClaw↔DeepInfra) | ✅ |
+| 0 — Скелет (Telegram↔OpenClaw↔LLM) | ✅ |
 | 1 — Redmine MCP read+аналитика | ✅ |
 | 2 — GitLab MCP read | ✅ |
 | 3 — Code Review (dry-run) | ✅ |
@@ -173,7 +173,7 @@ XWIKI_BASE_URL=
 
 ---
 
-## Модели — продуктовая среда (OpenClaw + DeepInfra)
+## Модели — продуктовая среда (OpenClaw + LLM)
 
 | Задача | Модель | Обоснование |
 |---|---|---|
@@ -181,9 +181,9 @@ XWIKI_BASE_URL=
 | Аналитик `team_digest` | **DeepSeek-V4-Pro** | сильный reasoning, изолирован |
 | Code Review `review_mr` | **DeepSeek-V4-Pro** | `REVIEW_MODEL`, свопаемый |
 | Компилятор `compile_task` | **DeepSeek-V4-Pro** | single-shot JSON |
-| Голос → текст | Whisper Large V3 (DeepInfra) | этап 7 |
+| Голос → текст | Whisper Large V3 (LLM API) | этап 7 |
 
-**Экономика DeepInfra ($ за 1M токенов):**
+**Экономика LLM ($ за 1M токенов):**
 
 | Модель | Input | Output | Роль |
 |---|---|---|---|
@@ -218,7 +218,7 @@ XWIKI_BASE_URL=
 
 - **Redmine:** multi-status в одном запросе → 500. `analyze_team_load` без `updated_within_days` медленный.
 - **Telegram-стрим:** режим должен быть `progress` (не `partial` — вызывает 429).
-- **DeepInfra idle-timeout:** `timeoutSeconds≥300`, короткие ответы, мало tool-call'ов за ход.
+- **LLM idle-timeout:** `timeoutSeconds≥300`, короткие ответы, мало tool-call'ов за ход.
 - **DeepSeek недетерминирован:** резать триггеры структурно, не надеяться на промпт.
 - **Native-субагенты НЕ получают MCP** — специалисты реализованы как agent-as-MCP.
 - Крупные диффы (>500 строк) — фильтровать по расширению (PHP/Go/TS/JS).

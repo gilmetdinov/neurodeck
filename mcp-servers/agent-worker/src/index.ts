@@ -4,7 +4,7 @@
 // Взаимодействует с оркестратором через MCP tools (pool_status, pool_approve).
 //
 // Env: WORKER_ID, AGENT_REPO_ROOT, REDMINE_*, GITLAB_*, GITLAB_WRITE_TOKEN,
-//      DEEPINFRA_BASE_URL, DEEPINFRA_API_KEY, OPENCODE_BIN, HARNESS_TIMEOUT_MS,
+//      LLM_BASE_URL, LLM_API_KEY, OPENCODE_BIN, HARNESS_TIMEOUT_MS,
 //      AGENT_WORKER_POLL_INTERVAL_MS, AGENT_WORKER_HEARTBEAT_INTERVAL_MS
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

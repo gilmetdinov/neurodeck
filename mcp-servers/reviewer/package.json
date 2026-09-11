@@ -2,7 +2,7 @@
   "name": "@neurodeck/reviewer-mcp",
   "version": "0.4.0",
   "private": true,
-  "description": "MCP-сервер код-ревью MR (GitLab /changes + Redmine контекст + DeepInfra)",
+  "description": "MCP-сервер код-ревью MR (GitLab /changes + Redmine контекст + LLM)",
   "type": "module",
   "main": "dist/index.js",
   "bin": {

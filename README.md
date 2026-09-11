@@ -1,7 +1,7 @@
 # neurodeck
 
 AI-агент для автоматизации операционки разработки: аналитика, code review,
-релиз-менеджмент. Оркестратор на **OpenClaw + DeepSeek-V4-Pro** (DeepInfra).
+релиз-менеджмент. Оркестратор на **OpenClaw** + LLM-модели через OpenAI-совместимый API.
 
 > Полное ТЗ и роадмап — в [`AGENTS.md`](./AGENTS.md).
 
@@ -22,7 +22,7 @@ bash scripts/setup.sh
 # задеплоит конфиг OpenClaw и покажет что заполнить.
 
 # 2. Отредактируй .env — обязательные переменные:
-#    DEEPINFRA_API_KEY          ключ DeepInfra (https://deepinfra.com/dash/api_keys)
+#    LLM_API_KEY          ключ LLM-провайдера (напр. https://platform.openai.com/api-keys)
 #    TELEGRAM_BOT_TOKEN         токен бота (@BotFather)
 #    TELEGRAM_ALLOWED_USER_IDS  telegram:<твой_id> (узнать у @userinfobot)
 
@@ -109,5 +109,5 @@ docs/                     — Архитектура, ADR, гайды
 ## Требования
 
 - **Node.js >= 22.19** (OpenClaw не работает на 20.x)
-- **DeepInfra API ключ** (или другой OpenAI-совместимый провайдер)
+- **OpenAI-совместимый API ключ** (OpenAI, OpenRouter, Together и др.)
 - **OpenClaw** (устанавливается автоматически скриптом setup)

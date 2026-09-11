@@ -11,7 +11,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
-  checkConfig, resolveMr, assembleReview, deepinfraReview,
+  checkConfig, resolveMr, assembleReview, llmReview,
   ID_TO_NAME,
 } from "./review-core.js";
 
@@ -75,10 +75,10 @@ async function main() {
 
   writeState("reviewing", { project: resolved.project, iid: resolved.iid, title: assembled.title, kept: assembled.kept });
 
-  // 3) DeepInfra review
+  // 3) LLM review
   let review: string;
   try {
-    review = await deepinfraReview(assembled.userMsg);
+    review = await llmReview(assembled.userMsg);
   } catch (e) {
     writeState("error", { error: `модель недоступна: ${(e as Error).message}`, project: resolved.project, iid: resolved.iid });
     console.error(`[run-review] ${reviewId}: model error: ${(e as Error).message}`);

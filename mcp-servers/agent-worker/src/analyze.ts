@@ -7,9 +7,9 @@ import { diFetch } from "./api.js";
 import { getProjectsRegistry, getClonePolicy } from "./config.js";
 
 const clean = (v?: string): string => { const s = (v ?? "").trim(); return /^\$\{.*\}$/.test(s) ? "" : s; };
-const DI_BASE = clean(process.env.DEEPINFRA_BASE_URL);
-const DI_KEY = clean(process.env.DEEPINFRA_API_KEY);
-const ANALYZE_MODEL = clean(process.env.ANALYZE_MODEL) || clean(process.env.DEEPINFRA_MODEL) || "deepseek-ai/DeepSeek-V4-Pro";
+const LLM_BASE = clean(process.env.LLM_BASE_URL);
+const LLM_KEY = clean(process.env.LLM_API_KEY);
+const ANALYZE_MODEL = clean(process.env.ANALYZE_MODEL) || clean(process.env.LLM_MODEL) || "deepseek-ai/DeepSeek-V4-Pro";
 const PROXY_URL = clean(process.env.PROXY_URL);
 
 function repoLangHint(repo: string): string | null {
@@ -71,7 +71,7 @@ export async function analyzeBusiness(spec: Record<string, any>): Promise<Analyz
   }
 
   // 2. Web-fallback via opencode search (stub)
-  if (hits.length > 0 && DI_BASE && DI_KEY) {
+  if (hits.length > 0 && LLM_BASE && LLM_KEY) {
     try {
       const query = `IATA aviation standard ${hits.slice(0, 2).join(" ")} ${spec.repo ?? ""}`;
       const result = await runWebSearch(query);
@@ -82,7 +82,7 @@ export async function analyzeBusiness(spec: Record<string, any>): Promise<Analyz
   }
 
   // 3. LLM sanity check (optional, cheap)
-  if (DI_BASE && DI_KEY) {
+  if (LLM_BASE && LLM_KEY) {
     try {
       const sanity = await llmSanityCheck(spec);
       if (!sanity.ok) {
@@ -107,9 +107,9 @@ async function llmSanityCheck(spec: Record<string, any>): Promise<{ ok: boolean;
     { role: "user", content: JSON.stringify({ title: spec.title, prompt_md: String(spec.prompt_md).slice(0, 2000), repo: spec.repo, scope_paths: spec.paths ?? spec.scope_paths }).slice(0, 3000) },
   ];
   const dispatcher = PROXY_URL ? new (await import("undici")).ProxyAgent(PROXY_URL) : undefined;
-  const res = await diFetch(`${DI_BASE}/chat/completions`, {
+  const res = await diFetch(`${LLM_BASE}/chat/completions`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${DI_KEY}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${LLM_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: ANALYZE_MODEL, messages, temperature: 0.2, max_tokens: 400, response_format: { type: "json_object" } }),
     dispatcher,
   });

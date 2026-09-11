@@ -5,8 +5,8 @@
  *         review_status — проверка статуса/результата по review_id.
  *         review_batch — синхронный (для cron, release-manager).
  *
- * СЕТЬ: GitLab/Redmine (<YOUR_HOST>) — НАПРЯМУЮ. DeepInfra (api.deepinfra.com) — через прокси.
- * DRY_RUN: ничего не пишет в GitLab/Redmine (только GET + POST к DeepInfra).
+ * СЕТЬ: GitLab/Redmine (<YOUR_HOST>) — НАПРЯМУЮ. LLM (api.openai.com) — через прокси.
+ * DRY_RUN: ничего не пишет в GitLab/Redmine (только GET + POST к LLM).
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -16,7 +16,7 @@ import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
-  checkConfig, assembleReview, deepinfraReview,
+  checkConfig, assembleReview, llmReview,
   ID_TO_NAME, REGISTRY, MODEL, PROXY,
   RM_BASE, RM_LOGIN, RM_PASS, parseVerdict, firstLine, mapPool, indexOpenMrs,
   CODE_REVIEW_STATUS, rmGet,
@@ -170,7 +170,7 @@ server.tool(
         `\n\n# РЕЖИМ: БАТЧ-СВОДКА\nОтветь РОВНО одной строкой на русском в формате: ` +
         `"<🔴|🟡|🟢> <суть ≤15 слов> (замечаний: N)". 🔴 = на доработку, 🟡 = мелочи/в беклог, 🟢 = ок.`;
       try {
-        const r = await deepinfraReview(terse, 260);
+        const r = await llmReview(terse, 260);
         return { ...base, verdict: parseVerdict(r), summary: firstLine(r) };
       } catch (e) {
         return { ...base, verdict: "⚠", summary: `модель недоступна: ${(e as Error).message}` };

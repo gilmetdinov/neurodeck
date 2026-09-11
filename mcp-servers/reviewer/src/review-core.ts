@@ -17,10 +17,10 @@ export const RM_BASE  = clean(process.env.REDMINE_BASE_URL).replace(/\/$/, "");
 export const RM_LOGIN = clean(process.env.REDMINE_LOGIN);
 export const RM_PASS  = clean(process.env.REDMINE_PASSWORD);
 const RM_PROJECT = clean(process.env.REDMINE_PROJECT);
-const DI_BASE  = (clean(process.env.DEEPINFRA_BASE_URL) || "https://api.deepinfra.com/v1/openai").replace(/\/$/, "");
-export const DI_KEY   = clean(process.env.DEEPINFRA_API_KEY);
-export const MODEL    = clean(process.env.REVIEW_MODEL) || clean(process.env.DEEPINFRA_MODEL);
-export const PROXY    = clean(process.env.DEEPINFRA_PROXY) || clean(process.env.HTTPS_PROXY) || clean(process.env.HTTP_PROXY);
+const LLM_BASE  = (clean(process.env.LLM_BASE_URL) || "https://api.openai.com/v1").replace(/\/$/, "");
+export const LLM_KEY   = clean(process.env.LLM_API_KEY);
+export const MODEL    = clean(process.env.REVIEW_MODEL) || clean(process.env.LLM_MODEL);
+export const PROXY    = clean(process.env.LLM_PROXY) || clean(process.env.HTTPS_PROXY) || clean(process.env.HTTP_PROXY);
 const PROMPT_PATH = clean(process.env.REVIEW_PROMPT_PATH);
 
 const diDispatcher: Dispatcher | undefined = PROXY ? new ProxyAgent(PROXY) : undefined;
@@ -33,7 +33,7 @@ if (PROMPT_PATH) {
 
 export function checkConfig(): string | null {
   if (!GL_BASE || !GL_TOKEN) return "нужен GITLAB_BASE_URL + GITLAB_TOKEN";
-  if (!DI_KEY || !MODEL)     return "нужен DEEPINFRA_API_KEY + REVIEW_MODEL/DEEPINFRA_MODEL";
+  if (!LLM_KEY || !MODEL)     return "нужен LLM_API_KEY + REVIEW_MODEL/LLM_MODEL";
   return null;
 }
 
@@ -84,11 +84,11 @@ export async function rmGet(path: string, params: Record<string, string> = {}): 
   });
 }
 
-export async function deepinfraReview(userMsg: string, maxTokens = 2000): Promise<string> {
+export async function llmReview(userMsg: string, maxTokens = 2000): Promise<string> {
   return timed(180_000, async (signal) => {
-    const res = await fetch(`${DI_BASE}/chat/completions`, {
+    const res = await fetch(`${LLM_BASE}/chat/completions`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${DI_KEY}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${LLM_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: MODEL,
         messages: [{ role: "system", content: REVIEW_PROMPT }, { role: "user", content: userMsg }],
@@ -98,7 +98,7 @@ export async function deepinfraReview(userMsg: string, maxTokens = 2000): Promis
       dispatcher: diDispatcher,
       signal,
     });
-    if (!res.ok) throw new Error(`DeepInfra ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`);
     const data: any = await res.json();
     return data?.choices?.[0]?.message?.content ?? "(пустой ответ модели)";
   });

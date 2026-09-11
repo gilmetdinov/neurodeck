@@ -3,13 +3,13 @@
 # run-gateway.sh — запуск OpenClaw gateway из ТВОЕГО терминала с file-логом.
 #
 # Прокси: на этой машине OpenClaw требует прокси и для Telegram (гео), и для
-# DeepInfra (прямой большой POST виснет → ETIMEDOUT; через прокси отдаёт 200).
+# LLM (прямой большой POST виснет → ETIMEDOUT; через прокси отдаёт 200).
 # Поэтому ДЕФОЛТ — гнать ВЕСЬ трафик через прокси из PROXY_URL (или TELEGRAM_PROXY)
 # в .env. NO_PROXY оставляет localhost. Минус — латентность VPN (это свойство нода).
 #
 # Заполни PROXY_URL (или TELEGRAM_PROXY) в .env, напр. http://127.0.0.1:7897.
 #
-# DIRECT=1 — попробовать DeepInfra напрямую (сейчас НЕ работает, оставлено на будущее):
+# DIRECT=1 — попробовать LLM напрямую (сейчас НЕ работает, оставлено на будущее):
 #   DIRECT=1 bash scripts/run-gateway.sh
 #
 # Лог пишется и на экран, и в logs/gateway-<timestamp>.log (смотреть: tail -f).
@@ -34,7 +34,7 @@ elif [ -n "$PROXY_URL" ]; then
   # а <YOUR_HOST> за фаерволлом. Иначе proxy-aware клиенты (gitbeaker в gitlab-mr-mcp) не достучатся.
   export NO_PROXY="${NO_PROXY:-localhost,127.0.0.1,<YOUR_HOST>,<YOUR_HOST>}"
 else
-  echo "⚠  PROXY_URL/TELEGRAM_PROXY не заданы в .env — Telegram/DeepInfra могут не подключиться."
+  echo "⚠  PROXY_URL/TELEGRAM_PROXY не заданы в .env — Telegram/LLM могут не подключиться."
 fi
 
 mkdir -p "$ROOT/logs"
