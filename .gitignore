@@ -16,6 +16,7 @@ __pycache__/
 # os
 .DS_Store
 .DS_STORE
+.*!.DS_Store
 
 # deployed/runtime config (we keep only the template in repo)
 .openclaw-local/
