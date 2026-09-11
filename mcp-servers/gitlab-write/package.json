@@ -1,0 +1,24 @@
+{
+  "name": "@neurodeck/gitlab-write-mcp",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Write-MCP для GitLab (ADR-0025/0016): merge_mr / set_reviewers / suggest_reviewers за approval-гейтом — релиз-менеджер + автоназначение ревью",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "gitlab-write-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -w -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "json5": "^2.2.3",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0"
+  }
+}

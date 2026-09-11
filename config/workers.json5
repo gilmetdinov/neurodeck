@@ -1,0 +1,18 @@
+// config/workers.json5 — реестр личностей воркеров пула (ADR-0028).
+// Каждый воркер — это отдельный MCP-процесс agent-worker с env WORKER_ID.
+// Старт: только worker-1 (go/php). Добавлять новых — копией блока + новый
+// процесс в openclaw.json5.
+{
+  workers: [
+    {
+      id: "worker-1",
+      name: "Worker 1",
+      specialization: ["go", "php"],
+      default_model: "opencode-go/deepseek-v4-pro",
+      tier: "strong",
+      max_concurrent_tasks: 1,
+      idle_grace_ms: 600000,          // 10 мин простоя → берёт любую задачу
+      heartbeat_interval_ms: 30000,   // пишет agents/worker-1.json каждые 30 сек
+    },
+  ],
+}

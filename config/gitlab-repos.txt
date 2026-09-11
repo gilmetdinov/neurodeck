@@ -1,0 +1,7 @@
+# Список репозиториев для клонирования (git@host:namespace/repo.git)
+# Строки с # и пустые игнорируются.
+# Запуск: scripts/gitlab-clone-groups.sh
+
+# Пример:
+# git@<YOUR_GITLAB_HOST>:<group>/my-service.git
+# git@<YOUR_GITLAB_HOST>:<group>/my-lib.git

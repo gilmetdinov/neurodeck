@@ -1,0 +1,45 @@
+// config/notifier.json5 — настройки уведомлений worker pool (ADR-0028).
+// Notifier — отдельный MCP-процесс, шлёт в групповой Telegram-чат разрабов.
+{
+  // Telegram chat_id для группового чата.
+  // Задаётся через env NOTIFIER_CHAT_ID (см. .env.example).
+  // Формат: числовой ID или строка с @channelusername. Узнать у @getidsbot.
+  chat_id: "",
+
+  // Тот же бот, что и у оркестратора.
+  bot_token_env: "TELEGRAM_BOT_TOKEN",
+
+  // Прокси, если нужен.
+  proxy_env: "PROXY_URL",
+
+  // Интервал опроса событий.
+  poll_interval_ms: 30000,
+
+  // Директория с событиями.
+  events_dir: "workspace/state/events",
+
+  // Файл с last_seen cursor (не коммитится).
+  cursor_path: "workspace/state/notifier-cursor.json",
+
+  // Хранить события N дней, затем переносить в events/archive/.
+  archive_events_days: 7,
+
+  // Типы событий, которые отправляются в Telegram.
+  enabled_event_types: [
+    "task.pending_approval",
+    "task.needs_clarify",
+    "task.done",
+    "task.rework",
+    "task.executed",
+    "review.ready",
+    "release.rc_ready",
+    "version.monitor",
+  ],
+
+  // Настройки inline-кнопок.
+  buttons: {
+    open_redmine: true,
+    open_gitlab: true,
+    create_rc_mr: true,
+  },
+}

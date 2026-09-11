@@ -1,0 +1,91 @@
+{
+  "_comment": "ПРИМЕР заполненного team.json. Скопируй структуру в team.json и замени данные на свои. Redmine ID трекеров/статусов/людей — получи через API (redmine-discover.py) или вручную из веб-интерфейса. GitLab ID — из API GitLab. E-mail'ы и логины заменены на примерные.",
+
+  "project": { "slug": "your-project", "id": 171, "name": "Your Project" },
+
+  "core_developers": [
+    { "id": 100, "name": "Иван Петров",           "login": "ipetrov",     "role": "teamlead", "git_emails": ["ipetrov@example.com"],             "gitlab": { "username": "ipetrov",     "id": 1, "emails": ["ipetrov@example.com"] } },
+    { "id": 101, "name": "Мария Сидорова",        "login": "msidorova",   "git_emails": ["msidorova@example.com", "msidorova@gmail.com"], "gitlab": { "username": "msidorova",   "id": 2, "emails": ["msidorova@example.com"] } },
+    { "id": 102, "name": "Алексей Иванов",        "login": "aivanov",     "git_emails": ["aivanov@example.com"],               "gitlab": { "username": "aivanov",     "id": 3, "emails": ["aivanov@example.com"] } },
+    { "id": 103, "name": "Елена Смирнова",        "login": "esmirnova",   "git_emails": ["esmirnova@example.com"],              "gitlab": { "username": "esmirnova",   "id": 4, "emails": ["esmirnova@example.com"] } }
+  ],
+
+  "dev_pool_account": { "id": 200, "name": "Developer Developer" },
+
+  "_agent_account_comment": "Служебный Redmine-аккаунт агентов-исполнителей (ADR-0026). Задачи в статусе «На исполнение»(20), назначенные на него, агенты ПОДБИРАЮТ автономно (plan_executor_pickups → compile → апрув → run). login нужен для X-Redmine-Switch-User при write-операциях.",
+
+  "agent_account": { "id": 300, "name": "AI Agent (DEV)", "login": "ai-dev-agent" },
+
+  "_roles_comment": "Касты исполнителей. core_developers выше == backend_web. ЗАПОЛНИ id для android/analysts/qa вручную (по ним агент строит дайджесты по кастам).",
+
+  "_gitlab_mapping_comment": "ДЛЯ РЕЛИЗ-МЕНЕДЖЕРА (ADR-0025): заполни gitlab.{username,id} у каждого разраба по выгрузке из GitLab (формат уже готов в core_developers выше). Как используется: assignee MR резолвится по gitlab.id/username → наш разраб → его каста (roles.frontend vs backend_web). Эвристика типа задачи: assignee во frontend ⇒ фронт (1 ревьюер), иначе бекенд/фулстек (2 ревьюера).",
+  "roles": {
+    "backend_web": { "ids": [100, 101, 102], "label": "Backend/Web разработка" },
+    "frontend":    { "ids": [103],           "label": "Frontend разработка" },
+    "android":     { "ids": [400],           "label": "Android" },
+    "analysts":    { "ids": [401, 402, 403, 404, 405], "label": "Аналитики" },
+    "qa":          { "ids": [406, 407, 408, 409],      "label": "Тестирование/QA" },
+    "devops":      { "ids": [410, 411],      "label": "DevOps" }
+  },
+
+  "_pipeline_comment": "Порядок статусов по пути до прода (для трактовки 'застряло перед продом' и прогресса). Closed-статусы Решена/В пуле — финал; Не пройдено/На доработке — откат назад в руки разраба.",
+  "pipeline_order": [
+    "На исполнение", "В работе", "Code review", "Исполнено",
+    "К тестированию", "Тестирование", "Пройдено", "Решена", "В пуле"
+  ],
+
+  "statuses": {
+    "created_not_ready": { "ids": [1, 19, 22], "names": ["Новая", "Текущий план", "На утверждение требований"], "meaning": "создана, но не передана исполнителю (нужны сроки/описание)" },
+    "ready_to_take":     { "ids": [20], "names": ["На исполнение"], "meaning": "готова, чтобы её взяли в работу" },
+    "in_progress":       { "ids": [2], "names": ["В работе"], "meaning": "ключевой статус. Цель: ровно 1 у разраба. Терпимо: 1-3. КРАСНЫЙ ФЛАГ: 0 (халатность с отчётностью)" },
+    "code_review":       { "ids": [13], "names": ["Code review"], "meaning": "работа закончена, ждёт ревью тимлида. На develop ещё НЕ залито, ревью блокирует" },
+    "executed_dev":      { "ids": [27], "names": ["Исполнено"], "meaning": "ревью пройдено, залито на develop/dev-среду. Не в release candidate, не на stage" },
+    "to_testing":        { "ids": [24], "names": ["К тестированию"], "meaning": "залито в release candidate, доставлено на stage" },
+    "testing":           { "ids": [9], "names": ["Тестирование"], "meaning": "ждёт тестирования" },
+    "passed":            { "ids": [25], "names": ["Пройдено"], "meaning": "практически конечный статус, разрабу можно не париться" },
+    "failed":            { "ids": [26], "names": ["Не пройдено"], "meaning": "чаще всего → На доработке" },
+    "rework":            { "ids": [8], "names": ["На доработке"], "meaning": "решение об отправке принимает тимлид или аналитик" },
+    "paused":            { "ids": [10], "names": ["Приостановлена"], "meaning": "разраб сознательно переключился. ПЕРВЫЙ КАНДИДАТ В ПОХОРОНЕННЫЕ. >1 у разраба = красный флаг" },
+    "resolved":          { "ids": [3], "names": ["Решена"], "meaning": "закрыта, но не залита в master", "closed": true },
+    "in_pool":           { "ids": [12, 18], "names": ["В пуле", "В пуле (частично)"], "meaning": "залито в master, релиз готов к доставке пользователю", "closed": true },
+    "rotten":            { "ids": [31], "names": ["Протухло"], "meaning": "задача/код полностью потеряли актуальность. Конечный статус для похороненного беклога", "closed": true }
+  },
+
+  "overdue_scope": {
+    "status_ids": [2, 20, 8, 10, 26],
+    "meaning": "статусы, где задача в активных руках разраба. Просрочка по ним = реальное провисание."
+  },
+
+  "xwiki": {
+    "base_url": "https://xwiki.example.com",
+    "wiki": "your-wiki",
+    "standards_pages": [
+      { "space": "TEAM", "page": "Стандарты разработки" },
+      { "space": "TEAM", "page": "Жизненный цикл задачи" },
+      { "space": "TEAM", "page": "Git-стандарт" },
+      { "space": "TEAM", "page": "Code Style PHP" }
+    ]
+  },
+
+  "_trackers_comment": "ПРИМЕРНЫЙ реестр трекеров. СВЕРЬ ID со своей инсталляцией Redmine!",
+
+  "trackers": {
+    "primary":   { "ids": [7, 1, 2, 19, 25], "names": ["Разработка", "Ошибка", "Улучшение", "Инцидент", "Инцидент из мониторинга"], "meaning": "основная работа разработчиков", "executable": true },
+    "support":   { "ids": [3, 20], "names": ["Поддержка", "Поддержка инфраструктуры"], "meaning": "сопровождение и инфраструктура", "executable": true },
+    "devops":    { "ids": [21, 23, 24, 28], "names": ["DevOps", "Release Stage", "Release", "Сборка"], "meaning": "сборка/релиз/devops", "executable": false },
+    "design":    { "ids": [8, 22], "names": ["Дизайн UI", "Дизайн UX"], "meaning": "дизайн интерфейсов", "executable": false },
+    "testing":   { "ids": [15], "names": ["Тестирование"], "meaning": "тестирование", "executable": false },
+    "config":    { "ids": [12], "names": ["Настройка"], "meaning": "конфигурация и настройка", "executable": true },
+    "secondary": { "ids": [30, 11], "names": ["Проектирование", "Документация"], "meaning": "проектирование и документация", "executable": false },
+    "epic":      { "ids": [26], "names": ["Эпик"], "meaning": "верхнеуровневая декомпозиция", "executable": false },
+    "misc":      { "ids": [9, 14, 18, 29, 31], "names": ["Продажи", "ДОП. ФУНКЦИОНАЛ", "По ТЗ", "Совещание", "Трудоустройство"], "meaning": "прочее: менеджмент/HR/продажи", "executable": false }
+  },
+
+  "priorities": [
+    { "id": 1, "name": "Низкий" },
+    { "id": 2, "name": "Нормальный", "default": true },
+    { "id": 3, "name": "Высокий" },
+    { "id": 4, "name": "Срочный" },
+    { "id": 5, "name": "Немедленный" }
+  ]
+}

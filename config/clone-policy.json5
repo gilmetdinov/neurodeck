@@ -1,0 +1,42 @@
+// config/clone-policy.json5 — политика клон-репозиториев для worker pool (ADR-0028).
+// Worker'ы работают в фиксированных клонах, не в оригинальных репо.
+{
+  // Базовая директория для всех клонов (должна существовать).
+  // Переопределяется через env CLONES_BASE_DIR. Заполни абсолютный путь.
+  clones_base_dir: "",
+
+  // Registry file: кто какой клон занял и когда.
+  // Если пусто → CLONES_BASE_DIR + "/.clone-registry.json".
+  clone_registry_path: "",
+
+  // Дефолтная политика для обычных проектов.
+  default_policy: {
+    max_clones_per_repo: 3,      // один клон на worker'а
+    lock_timeout_sec: 7200,      // 2 часа — время жизни одного выполнения
+    hot_standby: true,           // не удалять клон после задачи
+    pre_work_refresh: true,      // git fetch && checkout master && pull
+    post_work_cleanup: false,    // не чистить рабочую директорию
+  },
+
+  // Сервисные/малые репозитории: один клон на всех worker'ов.
+  service_repos: ["<service-a>", "log-clickhouse"],
+  service_repo_policy: {
+    max_clones_per_repo: 1,
+    shared_lock: true,
+  },
+
+  // Соответствие repo → язык/стек для matching'а с workers.json5.
+  // Используется, если в TaskSpec не задано поле lang.
+  repo_lang_hints: {
+    <main-project>:      "php",
+    <variant-a>: "php",
+    <variant-b>:  "php",
+    <variant-c>:  "php",
+    "<dev-staging>":         "php",
+    "<personal-monorepo>":    "ts",
+    "neura-mod":       "ts",
+    "<sandbox-project>":         "php",
+    "log-clickhouse":  "go",
+    <service-a>:             "go",
+  },
+}

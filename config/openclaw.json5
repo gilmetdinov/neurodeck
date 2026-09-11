@@ -1,0 +1,426 @@
+// ─────────────────────────────────────────────────────────────────────────
+// neurodeck-agent — версионируемый шаблон конфига OpenClaw
+//
+// Это НЕ рабочий конфиг. Рабочий живёт в ~/.openclaw/openclaw.json.
+// Деплой:  npm run deploy:config   (см. scripts/deploy-config.sh)
+//
+// Формат: JSON5 (комментарии и unquoted-ключи разрешены).
+// Секреты НЕ хардкодим — используем ${ENV} подстановку из окружения демона.
+// Схема: https://docs.openclaw.ai/gateway/configuration-reference
+//
+// Текущий этап роадмапа: 0 (echo-бот). MCP-серверы и доп. провайдеры
+// закомментированы и включаются на соответствующих этапах.
+// ─────────────────────────────────────────────────────────────────────────
+{
+  // === Провайдеры моделей ===========================================
+  models: {
+    providers: {
+      // DeepInfra как кастомный OpenAI-совместимый провайдер.
+      // НЕ существует "@openclaw/deepinfra-provider" — подключаем напрямую.
+      deepinfra: {
+        baseUrl: "${DEEPINFRA_BASE_URL}", // https://api.deepinfra.com/v1/openai
+        apiKey: "${DEEPINFRA_API_KEY}",
+        api: "openai-completions",
+        // IDLE-таймаут (с момента последнего токена). DeepSeek-V4-Pro через прокси даёт длинные
+        // немые паузы на сложных ответах (буферизация SSE) — на 120 ловили "LLM idle timeout".
+        // 300 даёт запас; настоящее лечение — короткие ответы (не фанаутить тулзы), см. system.md.
+        timeoutSeconds: 300,
+        models: [
+          {
+            // Берётся из DEEPINFRA_MODEL в .env → deploy-config.sh подставляет при деплое.
+            id: "${DEEPINFRA_MODEL}",
+            name: "${DEEPINFRA_MODEL}",
+            reasoning: false,
+            input: ["text"],
+            // Стоимость зависит от модели — при смене DEEPINFRA_MODEL обновить вручную
+            // (или оставить нули, если учёт расходов в OpenClaw не нужен). ADR-0003.
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 131072,
+            maxTokens: 8192,
+          },
+        ],
+      },
+
+      // ── ЛОКАЛЬНАЯ Qwen (ADR-0023, vllm полиглот-коннектор) ───
+      // Anthropic Messages API (НЕ OpenAI — /v1/chat/completions → 404).
+      // vllm на <LOCAL_HOST>:3456, протокол /v1/messages, auth x-api-key.
+      // ⚠ Эндпоинт во внутренней сети — НЕ через прокси.
+      // ⚠ OpenClaw может НЕ поддерживать кастомный Anthropic-провайдер напрямую —
+      //    основной потребитель = harness LocalModelDriver (run.ts, driver:"local").
+      //    Если нужен OpenClaw-провайдер: проверить, поддерживает ли api:"anthropic-messages".
+      //
+      // ⚠️ РАСКОММЕНТИРОВАТЬ ПОСЛЕ УСПЕШНОГО qwen-probe.py:
+      // "office-qwen": {
+      //   baseUrl: "${LOCAL_MODEL_BASE_URL}", // http://<LOCAL_HOST>:3456
+      //   apiKey: "${LOCAL_MODEL_API_KEY}",   // локальный ключ vllm
+      //   api: "anthropic-messages",          // ← проверить поддержку OpenClaw
+      //   timeoutSeconds: 300,
+      //   models: [
+      //     {
+      //       id: "${LOCAL_MODEL_NAME}",       // qwen
+      //       name: "Qwen3.5-122B (office)",
+      //       reasoning: false,
+      //       input: ["text"],
+      //       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      //       contextWindow: 131072,
+      //       maxTokens: 8192,
+      //     },
+      //   ],
+      // },
+    },
+  },
+
+  // === Агент ========================================================
+  agents: {
+    defaults: {
+      // Дефолтная модель-фолбэк (каждый агент в list задаёт свою явно).
+      model: { primary: "deepinfra/${DEEPINFRA_MODEL}" },
+      // Allowlist моделей, доступных агентам.
+      models: {
+        "deepinfra/${DEEPINFRA_MODEL}": { alias: "${DEEPINFRA_MODEL}" },
+      },
+      // ── ПАМЯТЬ (recall на эмбеддингах) ────────────────────────────────────────────
+      // Тулзы: memory_search + memory_get. Провайдер deepinfra, модель BAAI/bge-m3
+      // (мультиязычная, 1024-dim, тянет русский). Эмбеддинги идут НА api.deepinfra.com
+      // → через прокси (как LLM-вызовы). Ключ — DEEPINFRA_API_KEY (уже есть).
+      // Отключить: поменять enabled: false. Подробности — docs/tasks/memory-enablement.md.
+      memorySearch: { enabled: true, provider: "deepinfra", model: "BAAI/bge-m3" },
+    },
+    // ОДИН агент (agent-as-MCP): native-субагенты не получают bundle-mcp (ограничение OpenClaw,
+    // подтверждено тректорией), поэтому «специалисты» = умные MCP-тулзы со своей моделью внутри
+    // (reviewer.review_mr; redmine.team_digest — строится). Промпт — ws/orchestrator/AGENTS.md.
+    list: [
+      {
+        id: "orchestrator",
+        default: true,
+        model: { primary: "deepinfra/${DEEPINFRA_MODEL}" },
+        // Низкая температура — детерминированный ассистент (params уходят провайдеру DeepInfra).
+        models: { "deepinfra/${DEEPINFRA_MODEL}": { params: { temperature: 0.3 } } },
+        workspace: "${OPENCLAW_HOME}/ws/orchestrator",
+        // Имеет bundle-mcp (из профиля messaging): redmine (+ team_digest), gitlab, reviewer.
+        // Тяжёлая интерпретация и сырьё живут ВНУТРИ умных тулзов (своя модель) → контекст не пухнет.
+      },
+    ],
+  },
+
+  // === Память: backend = хранилище векторов (builtin = lancedb-файлы), ОТДЕЛЬНО от gate-флага
+  // тулзов (тот — agents.defaults.memorySearch.enabled, см. выше). builtin сам по себе тулзы НЕ
+  // поднимает (это не блокер был, а просто хранилище). Включение recall — через memorySearch. ===
+  memory: { backend: "builtin" },
+
+  // === Gateway ======================================================
+  // Без gateway.mode демон не стартует (найдено через openclaw doctor).
+  gateway: {
+    mode: "local",
+    // Token-auth (рекомендованный дефолт + предусловие нативных апрувов). Токен — в .env
+    // (GATEWAY_AUTH_TOKEN), НЕ инлайнится deploy'ем → OpenClaw подставит из env демона.
+    // Значение генерит `openclaw doctor` (Generate gateway token) → переносим в .env.
+    auth: { mode: "token", token: "${GATEWAY_AUTH_TOKEN}" },
+  },
+
+  // === Команды / владелец ===========================================
+  // Владелец = аккаунт, которому разрешены owner-only команды и апрувы.
+  // Формат идентичности — telegram:<numeric_id> (НЕ tg:!).
+  commands: { ownerAllowFrom: "${TELEGRAM_ALLOWED_FROM}" },
+
+  // === Каналы =======================================================
+  channels: {
+    telegram: {
+      enabled: true,
+      botToken: "${TELEGRAM_BOT_TOKEN}",
+      // allowlist = обрабатываем только перечисленных. Никаких unknown-DM.
+      dmPolicy: "allowlist",
+      // Формат: telegram:<id>,telegram:<id> → deploy-скрипт развернёт в массив.
+      allowFrom: "${TELEGRAM_ALLOWED_FROM}",
+      // Прокси ТОЛЬКО для вызовов Telegram Bot API (api.telegram.org гео-блок).
+      // Весь остальной трафик (DeepInfra, web) идёт напрямую = быстрее.
+      // http://... или socks5://... ; gateway запускать БЕЗ HTTP(S)_PROXY в env.
+      proxy: "${TELEGRAM_PROXY}",
+      // Стриминг-превью ответа. ДЕФОЛТ "partial" правит сообщение editMessageText ~раз/сек —
+      // на длинных прогонах (минуты) это сотни правок → Telegram 429, и тогда даже ФИНАЛЬНАЯ
+      // доставка падает (бюджет чата выжжен). "progress" держит ОДИН черновик-прогресс с
+      // этапами (какой тул крутится) и правит редко → 429 не ловим. Троттла у partial в
+      // конфиге НЕТ (хардкод ~1с), поэтому лечим сменой режима, а не кулдауном.
+      // Альтернатива — "off": вообще без превью, только финальный ответ.
+      streaming: {
+        mode: "progress",
+        progress: { toolProgress: true },  // показывать этап/тул в черновике (дефолт true)
+      },
+    },
+  },
+
+  // === MCP-серверы (этап 1: Redmine read-only) =========================
+  mcp: {
+    servers: {
+      // Этап 1: кастомный Redmine MCP (read-only)
+      redmine: {
+        command: "node",
+        args: ["${AGENT_REPO_ROOT}/mcp-servers/redmine/dist/index.js"],
+        env: {
+          REDMINE_BASE_URL: "${REDMINE_BASE_URL}",
+          // Аутентификация на Redmine — ТОЛЬКО Basic Auth (логин+пароль).
+          // API-ключ НЕ пробрасываем: при пустой подстановке OpenClaw оставляет литерал
+          // "${REDMINE_API_KEY}", MCP принимает его за реальный ключ и шлёт битый
+          // X-Redmine-API-Key → Redmine отвечает 401, игнорируя валидный Basic.
+          REDMINE_LOGIN: "${REDMINE_LOGIN}",
+          REDMINE_PASSWORD: "${REDMINE_PASSWORD}",
+          // Дефолтный проект и реестр команды (для get_team / analyze_team_load).
+          REDMINE_PROJECT: "${REDMINE_PROJECT}",
+          REDMINE_TEAM_CONFIG: "${AGENT_REPO_ROOT}/config/team.json",
+          // team_digest — агентный аналитик (своя модель + DeepInfra через прокси, как reviewer).
+          // Redmine ходит НАПРЯМУЮ, DeepInfra — через прокси.
+          DEEPINFRA_BASE_URL:    "${DEEPINFRA_BASE_URL}",
+          DEEPINFRA_API_KEY:     "${DEEPINFRA_API_KEY}",
+          DEEPINFRA_MODEL:       "${DEEPINFRA_MODEL}",        // фолбэк модели аналитика
+          REDMINE_ANALYST_MODEL: "${REDMINE_ANALYST_MODEL}", // override (свопаешь на gemma в .env); не задан → DEEPINFRA_MODEL
+          DEEPINFRA_PROXY:       "${TELEGRAM_PROXY}",
+          ANALYST_PROMPT_PATH:   "${AGENT_REPO_ROOT}/prompts/redmine-analyst.md",
+          // Общая фактура (проект/статусы/команда) — единый источник правды с оркестратором.
+          // MCP склеит base + ролевой (см. редмайн index.ts), как deploy-config.sh для оркестратора.
+          BASE_PROMPT_PATH:      "${AGENT_REPO_ROOT}/prompts/_base.md",
+          ANALYST_TEMPERATURE:   "${ANALYST_TEMPERATURE}",   // не задано в .env → дефолт 0.6 (в коде MCP)
+          ANALYST_MAX_STEPS:     "${ANALYST_MAX_STEPS}",     // не задано → дефолт 6
+          // ── compile_task (ADR-0015): компилятор Redmine-задачи → черновик TaskSpec ──────────
+          // Корень репо — для harness/tasks/ (запись черновиков), config/projects.json5, harness/docs/h1-module-dag.md.
+          AGENT_REPO_ROOT:       "${AGENT_REPO_ROOT}",
+          PROJECTS_REGISTRY:     "${AGENT_REPO_ROOT}/config/projects.json5",
+          COMPILER_PROMPT_PATH:  "${AGENT_REPO_ROOT}/prompts/task-compiler.md",
+          COMPILER_MODEL:        "${COMPILER_MODEL}",        // сильная модель (опус-класс из DeepInfra); пусто → REDMINE_ANALYST_MODEL/DEEPINFRA_MODEL
+          COMPILER_TEMPERATURE:  "${COMPILER_TEMPERATURE}",  // не задано → дефолт 0.3 (в коде MCP)
+          // ── RAG (ADR-0027 этап 5): внутренний RagFlow ──────────────────────────────────
+          RAGFLOW_BASE_URL:      "${RAGFLOW_BASE_URL}",
+          RAGFLOW_API_KEY:       "${RAGFLOW_API_KEY}",
+          // ── Figma (линковка с компилятором): если в задаче есть figma-ссылка ────────
+          FIGMA_TOKEN:           "${FIGMA_TOKEN}",
+        },
+      },
+      // Этап 2: GitLab MR (готовый пакет gitlab-mr-mcp v1.1.4).
+      // ВКЛЮЧИТЬ, когда в .env будет GITLAB_TOKEN со scope read_api (см. ниже).
+      // ВАЖНО: env-переменные пакета — MR_MCP_GITLAB_HOST / MR_MCP_GITLAB_TOKEN
+      // (НЕ GITLAB_HOST/GITLAB_TOKEN — проверено по dist пакета). Слева — имена
+      // пакета, справа — наши .env-ключи (OpenClaw подставит из env демона).
+      //
+      // READ-ONLY (этап 2): первая линия защиты — scope токена read_api: write-тулзы
+      // пакета (add_merge_request_comment, add_merge_request_diff_comment) тогда
+      // упрутся в 403 на стороне GitLab. На этапе 5 write открываем отдельно за approval.
+      // TODO: проверить синтаксис deny отдельных MCP-тулз в OpenClaw (defense-in-depth).
+      gitlab: {
+        command: "npx",
+        args: ["-y", "gitlab-mr-mcp"],
+        env: {
+          MR_MCP_GITLAB_HOST:  "${GITLAB_BASE_URL}",   // https://<YOUR_GITLAB_HOST>
+          MR_MCP_GITLAB_TOKEN: "${GITLAB_TOKEN}",      // scope: read_api (+read_repository)
+          // GitLab во внутренней сети → ходим НАПРЯМУЮ, без прокси (баг роутинга: gitlab уходил через прокси).
+          NO_PROXY: "*",
+        },
+      },
+      // Этап 4 (ADR-0022): Redmine-WRITE MCP — прод-мутации (add_note/update_status/create_issue).
+      // ОТДЕЛЬНЫЙ от read-redmine (раздельные привилегии, ADR-0007). КАЖДАЯ тулза гейтится плагином
+      // approval-gate (см. plugins.entries ниже — три тулзы добавлены в sensitiveTools). Второй рубеж
+      // в самом MCP: whitelist'ы DEFAULT-DENY (config/redmine-write.json5) + DRY_RUN + подпись + анти-дубль.
+      // Redmine — ВНУТРЕННИЙ хост → напрямую, без прокси. Ключ сервера с дефисом → в кавычках.
+      // ⚠ Собрать: npm run build:redmine-write (dist/index.js). DRY_RUN=false включать ТОЛЬКО после теста гейта.
+      "redmine-write": {
+        command: "node",
+        args: ["${AGENT_REPO_ROOT}/mcp-servers/redmine-write/dist/index.js"],
+        env: {
+          REDMINE_BASE_URL:     "${REDMINE_BASE_URL}",
+          // Write-учётка (агент). Если не задана — фолбэк на read-учётку.
+          REDMINE_WRITE_LOGIN:  "${REDMINE_WRITE_LOGIN}",
+          REDMINE_WRITE_PASSWORD: "${REDMINE_WRITE_PASSWORD}",
+          REDMINE_LOGIN:        "${REDMINE_LOGIN}",
+          REDMINE_PASSWORD:     "${REDMINE_PASSWORD}",
+          // team.json — id↔имена статусов/трекеров/приоритетов/проекта (резолв для write).
+          REDMINE_TEAM_CONFIG: "${AGENT_REPO_ROOT}/config/team.json",
+          // Конфиг-маппинг (NB-2): whitelist'ы переходов/проектов + per-tracker поля + подпись. DEFAULT-DENY.
+          REDMINE_WRITE_CONFIG: "${AGENT_REPO_ROOT}/config/redmine-write.json5",
+          AGENT_REPO_ROOT:     "${AGENT_REPO_ROOT}",       // для аудит-лога docs/approval-history.md
+          // FAIL-SAFE: запись ТОЛЬКО при DRY_RUN=false (из .env). Пусто/true/${...} → сухой прогон.
+          DRY_RUN:             "${DRY_RUN}",
+          REDMINE_WRITE_MODEL: "${DEEPINFRA_MODEL}",        // метка модели в подписи (NB-3)
+          REDMINE_WRITE_ON_BEHALF: "${REDMINE_WRITE_ON_BEHALF}",  // по чьему поручению (пусто → «тимлида»)
+        },
+      },
+      // GitLab WRITE (ADR-0025/0016): merge_mr/set_reviewers (за гейтом) + suggest_reviewers/list/get (read).
+      // ОТДЕЛЬНЫЙ от read gitlab-mr-mcp (раздельные привилегии, ADR-0007). Токен — ОТДЕЛЬНЫЙ, scope `api`
+      // (write): GITLAB_WRITE_TOKEN в .env (НЕ read GITLAB_TOKEN). GitLab — ВНУТРЕННИЙ хост → напрямую (нативный
+      // fetch не юзает прокси). Релиз-менеджер + автоназначение ревью. ⚠ Собрать: npm run build:gitlab-write.
+      "gitlab-write": {
+        command: "node",
+        args: ["${AGENT_REPO_ROOT}/mcp-servers/gitlab-write/dist/index.js"],
+        env: {
+          GITLAB_BASE_URL:     "${GITLAB_BASE_URL}",
+          GITLAB_WRITE_TOKEN:  "${GITLAB_WRITE_TOKEN}",     // scope api (write) — ОТДЕЛЬНЫЙ от read-токена
+          GITLAB_WRITE_CONFIG: "${AGENT_REPO_ROOT}/config/gitlab-write.json5",  // allowedMergeTargets/pollProjects/reviewer — DEFAULT-DENY
+          REDMINE_TEAM_CONFIG: "${AGENT_REPO_ROOT}/config/team.json",           // gitlab↔разраб↔каста для автоназначения
+          // Redmine READ (read-only) — условие автомёрджа «задача в статусе Исполнено» (plan_release_merges):
+          REDMINE_BASE_URL:    "${REDMINE_BASE_URL}",
+          REDMINE_LOGIN:       "${REDMINE_LOGIN}",
+          REDMINE_PASSWORD:    "${REDMINE_PASSWORD}",
+          AGENT_REPO_ROOT:     "${AGENT_REPO_ROOT}",        // аудит-лог docs/approval-history.md
+          DRY_RUN:             "${DRY_RUN}",                // FAIL-SAFE: реальная запись только при DRY_RUN=false
+          GITLAB_WRITE_MODEL:  "${DEEPINFRA_MODEL}",        // метка модели в подписи действия
+          GITLAB_WRITE_ON_BEHALF: "${REDMINE_WRITE_ON_BEHALF}",  // по чьему поручению (переиспользуем переменную)
+        },
+      },
+      // Этап 3: кастомный reviewer MCP (review_mr). Тянет диф сам через GitLab /changes
+      // API + контекст Redmine, прогоняет через DeepSeek-V4-Pro (REVIEW_MODEL), возвращает
+      // структурированный вердикт. Изолированная модель (свой env-блок), не зависит от оркестратора.
+      reviewer: {
+        command: "node",
+        args: ["${AGENT_REPO_ROOT}/mcp-servers/reviewer/dist/index.js"],
+        env: {
+          AGENT_REPO_ROOT:    "${AGENT_REPO_ROOT}",
+          GITLAB_BASE_URL:    "${GITLAB_BASE_URL}",
+          GITLAB_TOKEN:       "${GITLAB_TOKEN}",
+          REDMINE_BASE_URL:   "${REDMINE_BASE_URL}",
+          REDMINE_LOGIN:      "${REDMINE_LOGIN}",
+          REDMINE_PASSWORD:   "${REDMINE_PASSWORD}",
+          REDMINE_PROJECT:    "${REDMINE_PROJECT}",
+          DEEPINFRA_BASE_URL: "${DEEPINFRA_BASE_URL}",
+          DEEPINFRA_API_KEY:  "${DEEPINFRA_API_KEY}",
+          REVIEW_MODEL:       "${REVIEW_MODEL}",
+          DEEPINFRA_MODEL:    "${DEEPINFRA_MODEL}",
+          DEEPINFRA_PROXY:    "${TELEGRAM_PROXY}",
+          REVIEW_PROMPT_PATH: "${AGENT_REPO_ROOT}/prompts/code-review.md",
+          REVIEW_PROJECTS:    "<main-project>:7,<variant-a>:423,<variant-b>:266,<variant-c>:523,<dev-staging>:581",
+        },
+      },
+      // ADR-0028: Worker Pool — task-poller, agent-worker, notifier, supervisor
+      // запускаются ОТДЕЛЬНО от gateway через bash scripts/run-worker-pool.sh.
+      // Оркестратор читает состояние через файловую шину events/ и pool-state.json.
+      // Gateway управляет core MCP: redmine, gitlab-write, release-manager и т.д.
+      //
+      // ADR-0028: Worker Bridge — тонкий MCP-мост оркестратор↔worker pool.
+      // pool_approve пишет в events/ и pool-state.json. Agent-worker читает.
+      "worker-bridge": {
+        command: "node",
+        args: ["${AGENT_REPO_ROOT}/mcp-servers/worker-bridge/dist/index.js"],
+        env: {
+          AGENT_REPO_ROOT:      "${AGENT_REPO_ROOT}",
+        },
+      },
+      // ADR-0025: release-manager — ОТДЕЛЬНЫЙ агент (НЕ executor-engine). Свой cron-цикл.
+      // Циклы: rc-MR скан (30 мин), автоназначение ревьюеров (30 мин), мониторинг версий (60 мин),
+      // git-аналитика (6 часов). Тулзы: rm_status, rm_process, version_status, git_stats.
+      // ⚠ Собрать: npm run build:release-manager (dist/index.js).
+      "release-manager": {
+        command: "node",
+        args: ["${AGENT_REPO_ROOT}/mcp-servers/release-manager/dist/index.js"],
+        env: {
+          GITLAB_BASE_URL:       "${GITLAB_BASE_URL}",
+          GITLAB_WRITE_TOKEN:   "${GITLAB_WRITE_TOKEN}",
+          GITLAB_WRITE_CONFIG:  "${AGENT_REPO_ROOT}/config/gitlab-write.json5",
+          REDMINE_BASE_URL:      "${REDMINE_BASE_URL}",
+          REDMINE_LOGIN:         "${REDMINE_LOGIN}",
+          REDMINE_PASSWORD:      "${REDMINE_PASSWORD}",
+          REDMINE_TEAM_CONFIG:   "${AGENT_REPO_ROOT}/config/team.json",
+          AGENT_REPO_ROOT:       "${AGENT_REPO_ROOT}",
+          TELEGRAM_BOT_TOKEN:    "${TELEGRAM_BOT_TOKEN}",
+          TELEGRAM_ALLOWED_USER_IDS: "${TELEGRAM_ALLOWED_USER_IDS}",
+          TELEGRAM_PROXY:        "${TELEGRAM_PROXY}",
+          RELEASE_POLL_INTERVAL_MS: "1800000",
+          PROJECTS_REGISTRY:     "${AGENT_REPO_ROOT}/config/projects.json5",
+        },
+      },
+      // ADR-0027: git-egress — ОТДЕЛЬНЫЙ агент. Поллер (5 мин): читает executor-engine
+      // state.json → задачи в статусе "done" → push #NNNNN → create MR → develop →
+      // Redmine статус Code review(13) + примечание. Тулзы: egress_status, egress_process,
+      // egress_push. ⚠ Собрать: npm run build:git-egress (dist/index.js).
+      "git-egress": {
+        command: "node",
+        args: ["${AGENT_REPO_ROOT}/mcp-servers/git-egress/dist/index.js"],
+        env: {
+          GITLAB_BASE_URL:       "${GITLAB_BASE_URL}",
+          GITLAB_WRITE_TOKEN:   "${GITLAB_WRITE_TOKEN}",
+          REDMINE_BASE_URL:      "${REDMINE_BASE_URL}",
+          REDMINE_LOGIN:         "${REDMINE_LOGIN}",
+          REDMINE_PASSWORD:      "${REDMINE_PASSWORD}",
+          AGENT_REPO_ROOT:       "${AGENT_REPO_ROOT}",
+          PROJECTS_REGISTRY:     "${AGENT_REPO_ROOT}/config/projects.json5",
+          TELEGRAM_BOT_TOKEN:    "${TELEGRAM_BOT_TOKEN}",
+          TELEGRAM_ALLOWED_USER_IDS: "${TELEGRAM_ALLOWED_USER_IDS}",
+          TELEGRAM_PROXY:        "${TELEGRAM_PROXY}",
+        },
+      },
+      // XWiki MCP (спек 09): чтение статей корпоративной Wiki.
+      "xwiki": {
+        command: "node",
+        args: ["${AGENT_REPO_ROOT}/mcp-servers/xwiki/dist/index.js"],
+        env: {
+          XWIKI_BASE_URL: "${XWIKI_BASE_URL}",
+          XWIKI_WIKI:     "${XWIKI_WIKI}",
+          XWIKI_LOGIN:    "${XWIKI_LOGIN}",
+          XWIKI_PASSWORD: "${XWIKI_PASSWORD}",
+          XWIKI_PROXY:    "${PROXY_URL}",
+        },
+      },
+      // Obsidian Vault MCP (спек 10): графовая база знаний.
+      "obsidian": {
+        command: "node",
+        args: ["${AGENT_REPO_ROOT}/mcp-servers/obsidian/dist/index.js"],
+        env: {
+          OBSIDIAN_VAULT_PATH: "${OBSIDIAN_VAULT_PATH}",
+        },
+      },
+    },
+  },
+  // === Инструменты агента ===========================================
+  // Этап 1: профиль "messaging" + разрешаем bundle-mcp (инструменты MCP-серверов).
+  // Всё опасное (exec/write/edit/browser) по-прежнему в deny.
+  tools: {
+    profile: "messaging",
+    // ВАЖНО (cron-блокер, найдено по исходникам 2026.5.28): tool-policy pipeline
+    // только СУЖАЕТ набор тулзов шаг за шагом. Профиль "messaging" — это allow-whitelist
+    // (см. tool-catalog: messaging.allow = [...messaging ids, "bundle-mcp"]); cron в нём
+    // НЕТ (cron.profiles = ["coding"]), поэтому шаг профиля его ВЫРЕЗАЕТ. sandbox.tools.alsoAllow
+    // (ниже) применяется ПОЗЖЕ в пайплайне и вернуть вырезанное уже НЕ может.
+    // Единственный ключ, который вливается в allow-whitelist ПРОФИЛЯ ДО вырезания —
+    // top-level tools.alsoAllow (resolveExplicitProfileAlsoAllow → mergeAlsoAllowPolicy).
+    // Схема прямо это документирует: "merged into allow and/or profile allowlist".
+    // Поэтому cron живёт ЗДЕСЬ, а не под sandbox. НЕ переносить обратно под sandbox.
+    // cron — нативный планировщик; вырезается профилем messaging → лечится ТОЛЬКО здесь, top-level.
+    // bundle-mcp (MCP-тулзы) main-агент получает из самого профиля messaging — отдельно не нужен.
+    alsoAllow: ["cron"],
+    deny: ["exec", "exec_command", "write", "edit", "browser"],
+    // bundle-mcp — инструменты MCP-серверов (redmine/gitlab/reviewer); cron оставлен
+    // здесь дублёром (вреда нет). cron работает in-process внутри gateway; exec при этом
+    // ОСТАЁТСЯ в deny (cron ≠ exec).
+    sandbox: { tools: { alsoAllow: ["bundle-mcp", "cron"] } },
+  },
+
+  // === Плагины OpenClaw =============================================
+  // approval-gate (ADR-0007, гибрид-апрув): НАТИВНЫЙ гейт на чувствительные тулзы
+  // (harness run_task/run_batch; позже write-тулзы) через хук before_tool_call → requireApproval.
+  // LLM НЕ может само-апрувнуть (гейт нативный, между выбором тула и исполнением) — тимлид жмёт
+  // кнопку в Telegram, deny/timeout блокирует вызов. Грузим ЛОКАЛЬНО из репо (config-путь, а НЕ
+  // `openclaw plugins install` — версионируется и переживает deploy). Собран: plugins/approval-gate/dist.
+  // Workspace-плагины OFF по умолчанию (security) → включаем ЯВНО entries.enabled. README — в папке плагина.
+  plugins: {
+    enabled: true,
+    load: { paths: ["${AGENT_REPO_ROOT}/plugins/approval-gate"] },
+    entries: {
+      "approval-gate": {
+        enabled: true,
+        // Явный список гейтящихся тулз (перебивает дефолты из кода плагина). + Redmine-write (ADR-0022):
+        // add_note/update_status/create_issue + GitLab-write (ADR-0025): merge_mr/set_reviewers —
+        // КАЖДАЯ требует кнопку-апрув в Telegram перед исполнением.
+        config: { sensitiveTools: ["run_task", "run_batch", "add_note", "update_status", "create_issue", "merge_mr", "set_reviewers", "post_mr_comment", "pool_approve", "pool_forget", "obsidian_write"] },
+      },
+    },
+  },
+
+  // === Маршрут плагин-апрувов (ADR-0007/0016) =======================
+  // Схема = ExecApprovalForwardingConfig: { enabled, mode, agentFilter?, sessionFilter?, targets? }.
+  // mode "session" = апрув в чат-ИСТОЧНИК (твой Telegram, откуда оркестратор позвал тул) — id НЕ нужен,
+  // Telegram рисует same-chat кнопки + /approve. ("targets" = форвард в явные чаты, "both" = и то и то.)
+  // agentFilter сужает на оркестратора. Независимо от approvals.exec (host-shell exec, не наш кейс).
+  // ⚠ Нужен форвард в ОТДЕЛЬНЫЙ чат? → mode:"targets", targets:[{ channel:"telegram", to:"<numeric id>" }].
+  approvals: {
+    plugin: {
+      enabled: true,
+      mode: "session",
+      agentFilter: ["orchestrator"],
+    },
+  },
+}

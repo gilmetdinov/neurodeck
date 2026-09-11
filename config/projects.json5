@@ -1,0 +1,107 @@
+// ─────────────────────────────────────────────────────────────────────────
+// projects.json5 — реестр управляемых проектов/вариантов (ADR-0006, ADR-0013).
+// Карта: Redmine-проект → GitLab projectId → локальный путь → harness-настройки.
+// Правится ВРУЧНУЮ — контроль того, с какими репо агент работает.
+//
+// ⚠ ПЕРЕД ИСПОЛЬЗОВАНИЕМ:
+//   • Замени <YOUR_WORKSPACE> во всех repoPath на абсолютный путь к твоему workspace.
+//   • Убедись, что репозитории склонированы по указанным путям.
+//   • baseDir можно оставить пустым — переопредели через env AGENT_WORKBENCH_DIR.
+//
+// Типы записей:
+//   С ДОСТУПОМ К КОДУ (есть repoPath + harness) — можно запускать harness-прогоны.
+//   GITLAB-ONLY (только gitlabProjectId) — только read-доступ к MR/issues.
+// ─────────────────────────────────────────────────────────────────────────
+{
+  // Базовая директория всех проектов. Переопределяется через env AGENT_WORKBENCH_DIR.
+  // Заполни абсолютный путь к корню твоего workspace (напр. /home/user/Workspace).
+  baseDir: "",
+
+  // Глобальные дефолты — наследуются проектом, если он не переопределил.
+  defaults: {
+    defaultBranch: "master",
+    redmineProject: "neurodeck",
+    reviewExtensions: ["php", "go", "ts", "js"],
+
+    // workRoots (относительно baseDir): любой подкаталог = авто-harness-target,
+    // scope=full. Контроль — preview+апрув каждой задачи. Монолиты/варианты — per-project ниже.
+    harness: {
+      scopeMode: "files",
+      target: false,
+      workRoots: ["services", "libraries"],
+      workRootScope: "full",
+      models: { simple: "sonnet", medium: "opus", complex: "opus" },
+      // ── Verify-loop (ADR-0023 этап 3): дефолтные команды верификации ──
+      // Компилятор вшивает их в TaskSpec.verify если не переопределено в задаче.
+      // Пусто = верификация не запускается. Примеры команд — для Go/TS/PHP.
+      verifyDefault: {
+        commands: [],               // "go test ./..." / "php vendor/bin/phpstan analyse"
+        timeoutSec: 120,
+        maxRetries: 1,              // 1 ретрай при фейле верификации (+ эскалация weak→strong)
+      },
+    },
+  },
+
+  // ====== Figma → репо маппинг (спек 07) ======
+  figma_mapping: {
+    "<Your Project> Web": { repo: "<variant-a>", scopeMode: "files", paths: ["frontend/src/components/"] },
+    "<Your Project> Mobile": { repo: "<variant-a>", scopeMode: "full", paths: [] },
+  },
+
+  // ====== Реестр проектов ======
+  // ⚠ ЗАМЕНИ <YOUR_WORKSPACE> на абсолютный путь к твоему workspace.
+
+  projects: {
+    // ── Платформа (монолит) ──
+    <main-project>: {
+      gitlabProjectId: "<PROJECT_ID>",
+      repoPath: "<YOUR_WORKSPACE>/<project>/<main-project>",
+      harness: { scopeMode: "files", target: true },
+    },
+
+    // ── Варианты проекта (монолиты, отличаются друг от друга) ──
+    "<variant-a>": {
+      gitlabProjectId: "<PROJECT_ID>",
+      repoPath: "<YOUR_WORKSPACE>/<project>/<variant-a>",
+      harness: { scopeMode: "files", target: true },
+    },
+    "<variant-b>": { gitlabProjectId: "<PROJECT_ID>", repoPath: "<YOUR_WORKSPACE>/<project>/<variant-b>" },
+    "<variant-c>": { gitlabProjectId: "<PROJECT_ID>", repoPath: "<YOUR_WORKSPACE>/<project>/<variant-c>" },
+
+    // ── dev-стенд ──
+    "<dev-staging>": {
+      gitlabProjectId: "<PROJECT_ID>",
+      repoPath: "<YOUR_WORKSPACE>/<project>/<dev-staging>",
+    },
+
+    // ── H1 greenfield-монорепо (личный трек, не в GitLab/Redmine) ──
+    "<personal-monorepo>": {
+      gitlabProjectId: null,
+      repoPath: "<YOUR_WORKSPACE>/<project>/<personal-monorepo>",
+      harness: { scopeMode: "full", target: true },
+    },
+
+    // ── greenfield-полигон пайплайна (не в GitLab/Redmine) ──
+    "<greenfield-project>": {
+      gitlabProjectId: null,
+      repoPath: "<YOUR_WORKSPACE>/<greenfield-project>",
+      harness: { scopeMode: "full", target: true },
+    },
+
+    // ── ТЕСТОВЫЙ: песочница для обкатки агентов ──
+    "<sandbox-project>": {
+      gitlabProjectId: null,
+      repoPath: "<YOUR_WORKSPACE>/<project>/libraries",
+      redmineProject: "<sandbox-project>",
+      harness: { scopeMode: "full", target: true },
+    },
+
+    // ── Сервисы ──
+    "<service-a>": {
+      gitlabProjectId: "<PROJECT_ID>",
+      repoPath: "<YOUR_WORKSPACE>/<project>/services/<service-a>",
+      redmineProject: null,
+      harness: { scopeMode: "full", target: true }
+    }
+  },
+}

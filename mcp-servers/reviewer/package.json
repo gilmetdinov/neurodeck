@@ -1,0 +1,24 @@
+{
+  "name": "@neurodeck/reviewer-mcp",
+  "version": "0.4.0",
+  "private": true,
+  "description": "MCP-сервер код-ревью MR (GitLab /changes + Redmine контекст + DeepInfra)",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "reviewer-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -w -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "undici": "^6.21.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0"
+  }
+}

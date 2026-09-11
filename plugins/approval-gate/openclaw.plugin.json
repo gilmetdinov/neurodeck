@@ -1,0 +1,25 @@
+{
+  "id": "approval-gate",
+  "name": "neurodeck Approval Gate",
+  "description": "Нативный approval-гейт на чувствительные тулзы (harness run_task/run_batch и др.) через хук before_tool_call → requireApproval.",
+  "version": "0.0.1",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "sensitiveTools": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Имена тулзов, требующих апрува (дефолт в коде: run_task, run_batch)."
+      },
+      "timeoutMs": {
+        "type": "number",
+        "description": "Таймаут апрува, мс (дефолт 600000, потом deny)."
+      }
+    }
+  },
+  "activation": {
+    "onStartup": true,
+    "onCapabilities": ["hook"]
+  }
+}

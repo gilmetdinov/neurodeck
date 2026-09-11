@@ -1,0 +1,20 @@
+{
+  "name": "@neurodeck/worker-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Worker Pool Bridge MCP: thin file-bus bridge between orchestrator and agent-worker",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -w -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "name": "neurodeck-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-агент управления операционкой разработки neurodeck на базе OpenClaw + DeepInfra",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "workspaces": [
+    "mcp-servers/redmine",
+    "mcp-servers/redmine-write",
+    "mcp-servers/gitlab-write",
+    "mcp-servers/release-manager",
+    "mcp-servers/reviewer",
+    "mcp-servers/git-egress",
+    "mcp-servers/xwiki",
+    "mcp-servers/obsidian",
+    "mcp-servers/task-poller",
+    "mcp-servers/agent-worker",
+    "mcp-servers/notifier",
+    "mcp-servers/worker-bridge"
+  ],
+  "scripts": {
+    "deploy:config": "bash scripts/deploy-config.sh",
+    "doctor": "openclaw doctor",
+    "gateway": "bash scripts/run-gateway.sh",
+    "build:redmine": "npm run build --workspace mcp-servers/redmine",
+    "build:redmine-write": "npm run build --workspace mcp-servers/redmine-write",
+    "build:gitlab-write": "npm run build --workspace mcp-servers/gitlab-write",
+    "build:release-manager": "npm run build --workspace mcp-servers/release-manager",
+    "build:git-egress": "npm run build --workspace mcp-servers/git-egress",
+    "build:xwiki": "npm run build --workspace mcp-servers/xwiki",
+    "build:obsidian": "npm run build --workspace mcp-servers/obsidian",
+    "build:task-poller": "npm run build --workspace mcp-servers/task-poller",
+    "build:agent-worker": "npm run build --workspace mcp-servers/agent-worker",
+    "build:notifier": "npm run build --workspace mcp-servers/notifier",
+    "build:worker-bridge": "npm run build --workspace mcp-servers/worker-bridge",
+    "status": "openclaw doctor 2>&1 | head -30",
+    "cleanup:openclaw": "bash scripts/openclaw-cleanup.sh",
+    "cleanup:workspace": "bash scripts/openclaw-cleanup.sh --workspace",
+    "gen-dashboard": "bash scripts/gen-dashboard.sh",
+    "harness": "node --experimental-strip-types harness/src/run.ts",
+    "supervisor": "node scripts/supervisor-watch.mjs",
+    "worker-pool": "bash scripts/run-worker-pool.sh --build",
+    "worker-pool:stop": "bash scripts/run-worker-pool.sh --stop"
+  }
+}

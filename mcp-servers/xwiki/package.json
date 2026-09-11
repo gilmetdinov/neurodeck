@@ -1,0 +1,21 @@
+{
+  "name": "@neurodeck/xwiki-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "XWiki MCP: чтение статей корпоративной Wiki, дискавери ссылок, поиск",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -w -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "undici": "^7.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0"
+  }
+}

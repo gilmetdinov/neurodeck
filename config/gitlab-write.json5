@@ -1,0 +1,43 @@
+// ─────────────────────────────────────────────────────────────────────────
+// gitlab-write.json5 — конфигурация GitLab write-MCP (ADR-0025). НЕ секреты.
+//
+// Принцип безопасности (как redmine-write): DEFAULT-DENY — пустой allowedMergeTargets
+// = «мёрджить никуда нельзя». Правится ВРУЧНУЮ — контроль над тем, что агенту позволено
+// в GitLab. Путь сюда — env GITLAB_WRITE_CONFIG.
+// ─────────────────────────────────────────────────────────────────────────
+{
+  // ── Проекты-варианты для полла MR (числовые gitlabProjectId из projects.json5) ──
+  // ТИМЛИДУ: «все варианты» + расширяемое пространство под git-группу services (добавляй id сюда).
+  pollProjects: [
+    "<PROJECT_ID>",  // <main-project>
+    "<PROJECT_ID>",  // <variant-a>
+    "<PROJECT_ID>",  // <variant-b>
+    "<PROJECT_ID>",  // <variant-c>
+    "<PROJECT_ID>",  // <group-libraries> (testing)
+    // … добавляй репозитории из git-группы services здесь
+  ],
+
+  // ── Автомёрдж: ветки-цели, КУДА разрешён мёрдж (glob, DEFAULT-DENY) ──────────
+  // Релиз-менеджер мёрджит ТОЛЬКО сюда. rc-*.*.*.* = релиз-кандидаты. dev НЕ включаем
+  // (мёрдж в dev — часть ЖЦ Code review→Исполнено, делает разработчик, не автомёрдж).
+  allowedMergeTargets: ["rc-*"],
+
+  // ── Условие автомёрджа: статус связанной задачи Redmine (NB ADR-0025) ───────
+  // rc-MR мёрджим ТОЛЬКО если задача (по #NNNNN из source_branch) в этом статусе.
+  mergeRequiresTaskStatus: "Исполнено",
+  // Ветка, MR в которую сканируем на автоназначение ревьюеров (стадия Code review ЖЦ = merge в dev).
+  reviewScanTargetBranch: "develop",
+
+  // ── Автоназначение ревьюеров (ADR-0025 NB) ──────────────────────────────────
+  // Кол-во по касте задачи (по assignee): backend/fullstack → 2, frontend → 1.
+  // excludeAuthor — не назначать автора MR; excludeTeamlead:false — тимлида НЕ исключаем.
+  reviewerAssignment: { backendCount: 2, frontendCount: 1, excludeAuthor: true, excludeTeamlead: false },
+
+  // ── Атрибуция (подпись действия) ────────────────────────────────────────────
+  attribution: "\n\n---\n_Действие выполнено моделью {model} через neurodeck-agent по поручению {onBehalf}._",
+
+  // ── git-egress: целевая ветка для MR (по умолчанию develop) ──────────────
+  // egressTargetBranch: "develop",
+  // По-проектные переопределения (gitlab_project_id → ветка):
+  // egressTargetBranchPerProject: { 423: "develop", 7: "dev" },
+}

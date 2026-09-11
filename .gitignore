@@ -1,0 +1,40 @@
+# secrets / env
+.env
+.env.*
+!.env.example
+
+# node
+node_modules/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+
+# python
+*.pyc
+__pycache__/
+
+# os
+.DS_Store
+.DS_STORE
+
+# deployed/runtime config (we keep only the template in repo)
+.openclaw-local/
+*.local.json5
+
+# docs — личная документация, не для публикации
+docs/
+
+# runtime gateway logs
+logs/
+!logs/worker-pool/.gitkeep
+
+# claude code personal/local settings (per-machine, not team)
+.claude/settings.local.json
+
+# runtime state mirrors (workspace/state/.gitkeep and dashboard.md are kept)
+workspace/state/*
+workspace/harness-gate.txt
+harness/logs/
+harness/sources/
+harness/reports/
+harness/queue/

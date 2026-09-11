@@ -1,0 +1,155 @@
+// ─────────────────────────────────────────────────────────────────────────
+// agents.json5 — РЕЕСТР ФЛОТА агентов-специалистов (ADR-0024). SoT «команды»
+// оркестратора — рядом с team.json (люди) и projects.json5 (репо), но ось другая:
+// здесь — кто из НЕЙРО-агентов есть, чем реализован, на какой модели, нужен ли апрув,
+// когда его звать.
+//
+// ⚠ v0 — ДЕКЛАРАТИВНЫЙ: код это пока НЕ читает. Назначение: (1) единый список для человека;
+// (2) опора для будущей сверки — генерации роутинг-секции system.md и списка sensitiveTools
+// нативного гейта из ОДНОГО источника (ADR-0024 §2, открытый вопрос «генерить ли промпт из реестра»).
+// Правится ВРУЧНУЮ. Добавил агента → запись СЮДА (а не только в промпт/openclaw.json5).
+//
+// Жёсткое ограничение (memory openclaw-subagents-no-mcp): native-субагенты OpenClaw НЕ получают MCP →
+// специалисты бывают двух форм:
+//   • mcp-tool      — agent-as-MCP: синхронный, своя модель, изолирован; результат в ход оркестратора.
+//   • harness-driver— detached harness-джоба (run_task): асинхронная (job_id + announce), драйвер ADR-0023.
+//   • openclaw-agent— сам дирижёр (один, не субагент).
+// realization, approval (none|native-gate), status (live|gated|planned) — см. ADR-0024.
+// ─────────────────────────────────────────────────────────────────────────
+{
+  // ── Дирижёр ──────────────────────────────────────────────────────────────
+  orchestrator: {
+    id: "orchestrator",
+    realization: "openclaw-agent",
+    modelEnv: "DEEPINFRA_MODEL",          // Kimi-K2.5, temp 0.3
+    role: "Дирижёр: интент → выбор специалиста → апрув-петли → агрегация отчётов. НЕ исполнитель.",
+    prompt: "prompts/_base.md + prompts/system.md (склейка deploy → AGENTS.md)",
+    status: "live",
+  },
+
+  // ── Специалисты ──────────────────────────────────────────────────────────
+  specialists: {
+    // — Аналитика (read, без апрува) —
+    "team_digest": {
+      realization: "mcp-tool", mcp: "redmine", tools: ["team_digest"],
+      modelEnv: "REDMINE_ANALYST_MODEL",  // Qwen3-Coder-480B
+      role: "Аналитик: дайджест/нагрузка/что протухает — собирает статистику, отдаёт нарратив.",
+      approval: "none",
+      when: "дайджест / нагрузка / «что протухает» / «пройдись по людям» / утренний рекап",
+      status: "live",
+    },
+
+    // — Компилятор issue→TaskSpec (read, без апрува; пишет ЧЕРНОВИК в очередь) —
+    "compiler": {
+      realization: "mcp-tool", mcp: "redmine", tools: ["compile_task", "compile_batch"],
+      modelEnv: "COMPILER_MODEL",         // фолбэк → REDMINE_ANALYST_MODEL (см. .env)
+      role: "Компилятор: Redmine #NNNNN → черновик TaskSpec (target/scope/модель/бюджет) в harness/queue.",
+      approval: "none",
+      when: "«создай задачу по #NNNNN»; needs_clarification → вопросы тимлиду дословно",
+      status: "live",
+    },
+
+    // — Код-ревьюер (opencode subagent, read-only: fetches MR diff + Redmine context) —
+    "reviewer": {
+      realization: "mcp-tool", mcp: "reviewer", tools: ["review_mr", "review_batch"],
+      modelEnv: "REVIEW_MODEL",
+      role: "Ревью MR: получает дифф из GitLab API + контекст Redmine → DeepSeek-V4-Pro → вердикт 🔴/🟢/🟡 + замечания со ссылками.",
+      approval: "none",
+      when: "«отревью MR-NNNN» / «пройдись по Code review»",
+      status: "live",
+    },
+
+    // — Исполнитель (harness-driver, запускается agent-worker'ом напрямую через executor.ts) —
+    "harness-executor": {
+      realization: "harness-driver", driver: "opencode",
+      role: "Разработчик: порт/фича/рефактор в ЛОКАЛЬНОМ git. Запускается agent-worker'ом напрямую (executor.ts), без MCP-моста.",
+      approval: "native-gate",
+      when: "задачи в очереди worker pool (статус «Готов к исполнению»(20) → compile → approve → execute)",
+      status: "live",
+    },
+
+    // — Мутатор Redmine (write, за гейтом) —
+    "redmine-write": {
+      realization: "mcp-tool", mcp: "redmine-write", tools: ["add_note", "update_status", "create_issue"],
+      role: "Запись в Redmine: примечание / смена статуса (whitelist) / создание задачи. Подпись модели.",
+      approval: "native-gate",
+      when: "«смени статус #NNN» / «добавь примечание» / «создай задачу»",
+      status: "live",                    // MCP v0.1.0 построен, whitelist заполнен, deployed → live
+    },
+
+    // — Worker Pool (ADR-0028): task-poller, agent-worker, notifier —
+    "task-poller": {
+      realization: "mcp-tool", mcp: "task-poller",
+      tools: ["tp_status", "tp_process", "tp_compile_one"],
+      role: "Автономный поллер: статус 20 → compile + estimate → task-queue/. НЕ взаимодействует с Telegram.",
+      approval: "none",
+      when: "«что в очереди поллера?» / «скомпилируй #NNN»",
+      status: "live",
+    },
+    "agent-worker": {
+      realization: "mcp-tool", mcp: "agent-worker",
+      tools: ["pool_status", "worker_status", "pool_approve", "pool_deny", "pool_forget", "pool_reset"],
+      role: "Worker пула: claim → analyze → pending_approval → execute → report. Approval gate через pool_approve.",
+      approval: "native-gate",            // pool_approve, pool_forget гейтятся
+      when: "«очередь worker'ов» / «запускай #NNN» / «отклони #NNN»",
+      status: "live",
+    },
+    "notifier": {
+      realization: "mcp-tool", mcp: "notifier",
+      tools: ["ntf_status", "ntf_send_test", "ntf_reset_cursor"],
+      role: "Асинхронный Telegram-нотификатор: слушает events/ → чат разрабов + inline-кнопки.",
+      approval: "none",
+      when: "«что с нотификатором?» / «сбрось курсор»",
+      status: "live",
+    },
+
+    "autotest-writer": {
+      realization: "harness-driver", driver: "claude-code | local", executionMode: true,
+      role: "Писатель автотестов: СТРОГО тест-файлы (+ предложения по правкам прода). 1-й вертикал — PHP-вариант + Playwright (E2E веб-UI); harness прогоняет в SSH-песочнице с docker-стеком (verify-loop).",
+      approval: "native-gate",
+      when: "«напиши тесты на модуль/диф»",
+      status: "planned",                  // ADR-0023 этап 4; NB тимлида: PHP+Playwright, песочница SSH+Docker
+    },
+    "incident-diagnostician": {
+      realization: "harness-driver",
+      role: "Диагност инцидентов: логи/трейсы/repro в локальной среде, propose-only (без правок прода).",
+      approval: "native-gate",
+      when: "«разбери инцидент #NNNNN»",
+      status: "planned",                  // ADR-0023 (после execution-mode)
+    },
+    "devops": {
+      realization: "harness-driver",
+      role: "DevOps: CI/CD / инфра / деплой. Макс. blast radius → строгий гейт.",
+      approval: "native-gate",
+      when: "—",
+      status: "planned",                  // горизонт (последним по ADR-0023)
+    },
+    // git-egress — ВЫДЕЛЕННЫЙ агент-ответственность (ADR-0027, выбор тимлида 2026-07-01): вся GitLab-egress-поверхность
+    // в одном аудируемом месте. Харнес НЕ пушит (no-push ADR-0008 ЦЕЛ) — отдаёт готовую ветку, git-egress её выводит.
+    "git-egress": {
+      realization: "mcp-tool (cron)", mcp: "git-egress",
+      tools: ["egress_status", "egress_process", "egress_push"],
+      role: "Git-egress (ADR-0027): ОТДЕЛЬНЫЙ агент. Берёт ГОТОВУЮ ветку #NNNNN (харнес завершил) → push узко (ТОЛЬКО #NNNNN) + create_mr→develop + обновление Redmine: статус Code review(13) + примечание. Харнес НЕ пушит (no-push ADR-0008 цел) — egress-поверхность изолирована.",
+      approval: "none",                   // egress_push — за native-gate; авто-egress без апрува
+      when: "поллер каждые 5 мин ИЛИ ручной egress_push",
+      status: "live",                     // ПОСТРОЕН v0.1.0
+    },
+    "release-manager": {
+      realization: "mcp-tool (cron)", mcp: "release-manager",
+      tools: ["rm_status", "rm_process", "version_status", "git_stats"],
+      role: "Релиз-менеджер (ADR-0025): ОТДЕЛЬНЫЙ агент. (A) скан rc-*-MR → автомёрдж бесконфликтных (задача Исполнено) с тап-апрувом; (B) автоназначение ревьюеров на dev-MR без ревьюера (backend 2/frontend 1, load-aware); (C) мониторинг открытых версий Redmine (сроки, прогресс, напоминалки); (D) git-аналитика (коммиты/строки по разрабам). Свой cron-цикл.",
+      approval: "native-gate-shared",       // merge_mr/set_reviewers — через gitlab-write MCP за общим гейтом
+      when: "периодически (свой цикл 30 мин) ИЛИ по запросу: «релизный скан» / «статус версий» / «статистика по гиту»",
+      _gitlab_15_1_4_limitation: "можно назначить только 1 ревьюера; второго фиксировать примечанием к Redmine-задаче или в Telegram",
+      status: "gated",                    // ПОСТРОЕН v0.1.0; ждёт GITLAB_WRITE_TOKEN + деплой + тест
+    },
+    // figma-to-spec — skill для opencode: читает макеты, компилирует в фронтенд TaskSpec
+    "figma": {
+      realization: "skill", file: ".opencode/skills/figma-to-spec/SKILL.md",
+      role: "Figma-аналитик: читает макеты из Figma API → компилирует структуру дизайна (фреймы, компоненты, тексты, стили) → генерирует фронтенд TaskSpec.",
+      approval: "none",
+      when: "«собери ТЗ по макету» / «покажи структуру файла Figma»",
+      status: "live",
+    },
+  },
+}

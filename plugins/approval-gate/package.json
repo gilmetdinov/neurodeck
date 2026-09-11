@@ -1,0 +1,18 @@
+{
+  "name": "@neurodeck/approval-gate",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "OpenClaw-плагин: нативный approval-гейт на чувствительные тулзы (harness.run_task и др.) через before_tool_call → requireApproval. Кнопки в Telegram, LLM не может само-апрувнуть (гейт нативный, между выбором тула и исполнением). ADR-0007 (гибрид).",
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
